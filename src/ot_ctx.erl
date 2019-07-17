@@ -15,17 +15,8 @@
 %% @doc
 %% @end
 %%%-------------------------------------------------------------------------
--module(opentelemetry_app).
+-module(ot_ctx).
 
--behaviour(application).
-
--export([start/2, stop/1]).
-
-start(_StartType, _StartArgs) ->
-    Opts = application:get_all_env(opentelemetry),
-    opentelemetry_sup:start_link(Opts).
-
-stop(_State) ->
-    ok.
-
-%% internal functions
+-callback get(any()) -> any().
+-callback with_value(any(), any()) -> ok.
+-callback with_value(any(), any(), fun()) -> ok.

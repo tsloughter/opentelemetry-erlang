@@ -15,17 +15,22 @@
 %% @doc
 %% @end
 %%%-------------------------------------------------------------------------
--module(opentelemetry_app).
+-module(ot_ctx_seqtrace).
 
--behaviour(application).
+-behaviour(ot_ctx).
 
--export([start/2, stop/1]).
+-export([get/1,
+         with_value/2,
+         with_value/3]).
 
-start(_StartType, _StartArgs) ->
-    Opts = application:get_all_env(opentelemetry),
-    opentelemetry_sup:start_link(Opts).
-
-stop(_State) ->
+-spec get(any()) -> any().
+get(_Key) ->
     ok.
 
-%% internal functions
+-spec with_value(any(), any()) -> ok.
+with_value(_Key, _Value) ->
+    ok.
+
+-spec with_value(any(), any(), fun()) -> ok.
+with_value(_Key, _Value, Fun) ->
+    Fun().
