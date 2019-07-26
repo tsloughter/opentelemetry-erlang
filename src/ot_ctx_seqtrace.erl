@@ -20,17 +20,22 @@
 -behaviour(ot_ctx).
 
 -export([get/1,
+         get/2,
          with_value/2,
          with_value/3]).
 
--spec get(any()) -> any().
+-spec get(term()) -> term().
 get(_Key) ->
     ok.
 
--spec with_value(any(), any()) -> ok.
+-spec get(term(), term()) -> term().
+get(_Key, _Value) ->
+    ok.
+
+-spec with_value(term(), term()) -> ok.
 with_value(_Key, _Value) ->
     ok.
 
--spec with_value(any(), any(), fun()) -> ok.
+-spec with_value(term(), term(), fun()) -> ok.
 with_value(_Key, _Value, Fun) ->
     Fun().

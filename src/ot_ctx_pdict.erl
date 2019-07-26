@@ -21,14 +21,27 @@
 
 -export([with_value/2,
          with_value/3,
-         get/1]).
+         get/1,
+         get/2]).
 
+-spec get(term()) -> term().
 get(Key) ->
     erlang:get(Key).
 
+-spec get(term(), term()) -> term().
+get(Key, Default) ->
+    case erlang:get(Key) of
+        undefined ->
+            Default;
+        Value ->
+            Value
+    end.
+
+-spec with_value(term(), term()) -> ok.
 with_value(Key, Value) ->
     erlang:put(Key, Value).
 
+-spec with_value(term(), term(), fun()) -> ok.
 with_value(Key, Value, Fun) ->
     Orig = erlang:get(Key),
     try

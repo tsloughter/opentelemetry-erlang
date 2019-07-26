@@ -17,6 +17,7 @@
 %%%-------------------------------------------------------------------------
 -module(ot_ctx).
 
--callback get(any()) -> any().
--callback with_value(any(), any()) -> ok.
--callback with_value(any(), any(), fun()) -> ok.
+-callback get(term()) -> term().
+-callback get(term(), term()) -> term().
+-callback with_value(term(), term()) -> ok.
+-callback with_value(term(), term(), fun()) -> ok.
