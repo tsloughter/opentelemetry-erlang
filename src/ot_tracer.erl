@@ -28,8 +28,8 @@
          get_http_text_format/0]).
 
 -include("opentelemetry.hrl").
+-include("ot_tracer.hrl").
 
--define(tracer, (persistent_term:get({opentelemetry, tracer}, ot_tracer_sdk))).
 -define(CURRENT_TRACER, {?MODULE, current_tracer}).
 
 -callback start_span(opentelemetry:span_name(), ot_span:start_opts()) -> opentelemetry:span_ctx().
@@ -50,7 +50,7 @@ start_span(Name, Opts) ->
 
 -spec start_span(module(), opentelemetry:span_name(), ot_span:start_opts()) -> opentelemetry:span_ctx().
 start_span(Tracer, Name, Opts) ->
-    ot_ctx_pdict:with_value(?CURRENT_TRACER, Tracer),
+    ?ctx:with_value(?CURRENT_TRACER, Tracer),
     Tracer:start_span(Name, Opts).
 
 -spec with_span(opentelemetry:span_ctx()) -> ok.
@@ -59,32 +59,32 @@ with_span(Span) ->
 
 -spec with_span(module() | opentelemetry:span_ctx(), opentelemetry:span_ctx() | fun()) -> ok.
 with_span(Span=#span_ctx{}, Fun) ->
-    Tracer = ot_ctx_pdict:get(?CURRENT_TRACER, ?tracer),
+    Tracer = ?ctx:get(?CURRENT_TRACER, ?tracer),
     with_span(Tracer, Span, Fun);
 with_span(Tracer, Span) ->
-    ot_ctx_pdict:with_value(?CURRENT_TRACER, Tracer),
+    ?ctx:with_value(?CURRENT_TRACER, Tracer),
     Tracer:with_span(Span).
 
 -spec with_span(module(), opentelemetry:span_ctx(), fun()) -> ok.
 with_span(Tracer, SpanCtx, Fun) ->
-    ot_ctx_pdict:with_value(?CURRENT_TRACER, Tracer, fun() -> Tracer:with_value(SpanCtx, Fun) end).
+    ?ctx:with_value(?CURRENT_TRACER, Tracer, fun() -> Tracer:with_value(SpanCtx, Fun) end).
 
 -spec finish() -> ok.
 finish() ->
-    Tracer = ot_ctx_pdict:get(?CURRENT_TRACER, ?tracer),
+    Tracer = ?ctx:get(?CURRENT_TRACER, ?tracer),
     Tracer:finish().
 
 -spec current_span_ctx() -> opentelemetry:span_ctx().
 current_span_ctx() ->
-    Tracer = ot_ctx_pdict:get(?CURRENT_TRACER, ?tracer),
+    Tracer = ?ctx:get(?CURRENT_TRACER, ?tracer),
     Tracer:current_span_ctx().
 
 -spec get_binary_format() -> binary().
 get_binary_format() ->
-    Tracer = ot_ctx_pdict:get(?CURRENT_TRACER, ?tracer),
+    Tracer = ?ctx:get(?CURRENT_TRACER, ?tracer),
     Tracer:get_binary_format().
 
 -spec get_http_text_format() -> opentelemetry:http_headers().
 get_http_text_format() ->
-    Tracer = ot_ctx_pdict:get(?CURRENT_TRACER, ?tracer),
+    Tracer = ?ctx:get(?CURRENT_TRACER, ?tracer),
     Tracer:get_http_text_format().

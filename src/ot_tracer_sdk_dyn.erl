@@ -27,8 +27,7 @@
          get_binary_format/0,
          get_http_text_format/0]).
 
--define(span, (persistent_term:get({opentelemetry, span}, ot_span_ets))).
--define(ctx, (persistent_term:get({opentelemetry, ctx}, ot_ctx_pdict))).
+-include("ot_tracer.hrl").
 
 -define(SPAN_CTX, ot_tracer_dyn_span_ctx_key).
 

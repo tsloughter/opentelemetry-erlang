@@ -1,0 +1,3 @@
+-define(tracer, (persistent_term:get({opentelemetry, tracer}, ot_tracer_sdk))).
+-define(span, (persistent_term:get({opentelemetry, span}, ot_span_ets))).
+-define(ctx, (persistent_term:get({opentelemetry, ctx}, ot_ctx_pdict))).
