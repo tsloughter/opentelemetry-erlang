@@ -71,10 +71,10 @@ new_span_(Name, undefined, Kind, Attributes, Links) ->
     TraceOptions = update_trace_options(should_sample, Span),
     new_span_(Name, Span#span_ctx{trace_options=TraceOptions}, Kind, Attributes, Links);
 %% if parent is remote, first run sampler
-%% new_span_(Name, Span=#span_ctx{}, Kind, Attributes) %% when RemoteParent =:= true
-%%                                              ->
-%%     TraceOptions = update_trace_options(should_sample, Span),
-%%     new_span_(Name, Span#span_ctx{trace_options=TraceOptions}, Kind, Attributes);
+new_span_(Name, Parent=#span_ctx{is_remote=IsRemoteParent}, Kind, Attributes, Links)
+  when IsRemoteParent =:= true ->
+    TraceOptions = update_trace_options(should_sample, Parent),
+    new_span_(Name, Parent#span_ctx{trace_options=TraceOptions}, Kind, Attributes, Links);
 new_span_(Name, Parent=#span_ctx{trace_id=TraceId,
                                  trace_options=TraceOptions,
                                  tracestate=Tracestate,

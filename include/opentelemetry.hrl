@@ -48,7 +48,9 @@
           tracestate        :: opentelemetry:tracestate() | undefined,
           %% IsValid is a boolean flag which returns true if the SpanContext has a non-zero
           %% TraceID and a non-zero SpanID.
-          is_valid          :: boolean() | undefined
+          is_valid          :: boolean() | undefined,
+          %% true if the span context came from a remote process
+          is_remote         :: boolean() | undefined
          }).
 
 -record(span, {
