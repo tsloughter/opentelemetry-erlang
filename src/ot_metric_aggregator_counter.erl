@@ -22,6 +22,8 @@
          checkpoint/1,
          merge/2]).
 
+-export([format/3]).
+
 -include("ot_meter.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -62,6 +64,18 @@ checkpoint(Tab) ->
 -spec merge(number(), number()) -> number().
 merge(Number1, Number2) ->
     Number1 + Number2.
+
+format(Name, Labels, Value) ->
+    #{name => iolist_to_binary([Name, "{", format_labels(Labels), "}"]),
+      sum => Value}.
+
+format_labels(Labels) ->
+    lists:join($,, maps:fold(fun(K, V, Acc) ->
+                                     [[to_string(K), "=", to_string(V)] | Acc]
+                             end, [], Labels)).
+
+to_string(T) ->
+    io_lib:format("~s", [T]).
 
 %%
 

@@ -21,6 +21,9 @@
 -export([export/1]).
 
 export(Records) when map_size(Records) > 0 ->
-    io:format("Records ~p~n", [Records]);
+    maps:map(fun({Aggregator, Name, Labels}, Value) ->
+                     F = Aggregator:format(Name, Labels, Value),
+                     io:format("~20p~n", [F#{timestamp => wts:rfc3339(wts:timestamp())}])
+             end, Records);
 export(_) ->
     ok.

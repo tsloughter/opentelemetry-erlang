@@ -45,7 +45,7 @@ read(Tab) ->
                                      checkpoint=Value}, Acc) ->
                       %% TODO: what to do here with label sets should be configurable
                       FilteredLabelSet = filter_label_set(LabelKeys, LabelSet),
-                      NewKey = {Name, FilteredLabelSet},
+                      NewKey = {Aggregator, Name, FilteredLabelSet},
                       case maps:get(NewKey, Acc, undefined) of
                           undefined ->
                               Acc#{NewKey => Value};

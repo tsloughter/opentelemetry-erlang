@@ -22,6 +22,8 @@
          checkpoint/1,
          merge/2]).
 
+-export([format/3]).
+
 -include("ot_meter.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -62,6 +64,18 @@ merge({_Number1, Timestamp1}, {Number2, Timestamp2}) when Timestamp2 > Timestamp
 %% shouldn't happen since we are using monotonic_time, but better safe than sorry?
 merge({_Number1, _Timestamp1}, {Number2, Timestamp2}) ->
     {Number2, Timestamp2}.
+
+format(Name, Labels, Value) ->
+    #{name => iolist_to_binary([Name, "{", format_labels(Labels), "}"]),
+      last_value => Value}.
+
+format_labels(Labels) ->
+    lists:join($,, maps:fold(fun(K, V, Acc) ->
+                                     [[to_string(K), "=", to_string(V)] | Acc]
+                             end, [], Labels)).
+
+to_string(T) ->
+    io_lib:format("~s", [T]).
 
 %%
 

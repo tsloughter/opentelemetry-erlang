@@ -22,6 +22,8 @@
          checkpoint/1,
          merge/2]).
 
+-export([format/3]).
+
 -include("ot_meter.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -84,6 +86,22 @@ checkpoint(Tab) ->
 -spec merge(term(), term()) -> term().
 merge({Min1, Max1, Sum1, Count1}, {Min2, Max2, Sum2, Count2}) ->
     {erlang:min(Min1, Min2), erlang:max(Max1, Max2), Sum1+Sum2, Count1+Count2}.
+
+
+format(Name, Labels, {Min, Max, Sum, Count}) ->
+    #{name => iolist_to_binary([Name, "{", format_labels(Labels), "}"]),
+      min => Min,
+      max => Max,
+      sum => Sum,
+      count => Count}.
+
+format_labels(Labels) ->
+    lists:join($,, maps:fold(fun(K, V, Acc) ->
+                                     [[to_string(K), "=", to_string(V)] | Acc]
+                             end, [], Labels)).
+
+to_string(T) ->
+    io_lib:format("~s", [T]).
 
 %%
 
