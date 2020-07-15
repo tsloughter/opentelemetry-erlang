@@ -192,11 +192,16 @@ bind_instrument(Instrument, LabelSet) ->
     ot_metric_accumulator:lookup_active(Instrument, LabelSet).
 
 insert_new_instrument(Name, InstrumentKind, Opts) ->
-    case instrument(Name, InstrumentKind, Opts) of
-        {error, kind_not_a_module} ->
-            false;
-        Instrument ->
-            insert_new(Instrument)
+    ToInsert = instrument(Name, InstrumentKind, Opts),
+    insert_new(ToInsert).
+
+insert_new(ToInsert) ->
+    try
+        ets:insert_new(?TAB, ToInsert)
+    catch
+        C:T ->
+            ?LOG_INFO("Unable to create instruments because of error ~p:~p at ets:insert_new(~p, ~p)", [C, T, ?TAB, ToInsert]),
+            false
     end.
 
 %% Insert each individually so we can log more useful error messages.
@@ -215,33 +220,19 @@ insert_new_instruments(List) when is_list(List) ->
 insert_new_instruments(_) ->
     false.
 
-insert_new(Instrument=#instrument{name=Name}) ->
-    try
-        ets:insert_new(?TAB, Instrument)
-    catch
-        C:T:S ->
-            ?LOG_INFO("Unable to create instrument.", #{instrument_name => Name,
-                                                        class => C,
-                                                        exception => T,
-                                                        stacktrace => S}),
-            false
-    end.
-
 instrument(Name, InstrumentKind, InstrumentConfig) ->
-    %% InstrumentKind must be a module that implements `ot_instrument'
-    try InstrumentKind:module_info() of
-        _ ->
-            #instrument{name=Name,
-                        description=maps:get(description, InstrumentConfig, <<>>),
-                        kind=InstrumentKind,
-                        number_kind=maps:get(number_kind, InstrumentConfig, integer),
-                        unit=maps:get(unit, InstrumentConfig, one),
-                        monotonic=maps:get(monotonic, InstrumentConfig),
-                        synchronous=maps:get(synchronous, InstrumentConfig)}
+    try
+        {true, #instrument{name=Name,
+                           description=maps:get(description, InstrumentConfig, <<>>),
+                           kind=InstrumentKind,
+                           number_kind=maps:get(number_kind, InstrumentConfig, integer),
+                           unit=maps:get(unit, InstrumentConfig, one),
+                           monotonic=maps:get(monotonic, InstrumentConfig),
+                           synchronous=maps:get(synchronous, InstrumentConfig)}}
     catch
-        error:undef ->
-            ?LOG_INFO("Unable to create instrument kind because the kind must be a module.",
+        error:{badkey, Key} ->
+            ?LOG_INFO("Unable to create instrument because instrument map missing required key.",
                       #{instrument_name => Name,
-                        instrument_kind => InstrumentKind}),
-            {error, kind_not_a_module}
+                        missing_key => Key}),
+            false
     end.
