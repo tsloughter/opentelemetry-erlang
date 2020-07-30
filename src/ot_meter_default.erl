@@ -54,7 +54,8 @@
 start_link(Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
--spec new_instrument(opentelemetry:meter(), ot_meter:name(), ot_meter:instrument_kind(), ot_meter:instrument_opts()) -> boolean().
+-spec new_instrument(opentelemetry:meter(), ot_meter:name(), ot_meter:instrument_kind(),
+                     ot_meter:instrument_opts()) -> boolean().
 new_instrument(_Meter, Name, InstrumentKind, Opts) ->
     gen_server:call(?MODULE, {new, Name, InstrumentKind, Opts}).
 
