@@ -193,12 +193,7 @@ bind_instrument(Instrument, LabelSet) ->
     ot_metric_accumulator:lookup_active(Instrument, LabelSet).
 
 insert_new_instrument(Name, InstrumentKind, Opts) ->
-    case instrument(Name, InstrumentKind, Opts) of
-        {error, kind_not_a_module} ->
-            false;
-        Instrument ->
-            insert_new(Instrument)
-    end.
+    insert_new(instrument(Name, InstrumentKind, Opts)).
 
 %% Insert each individually so we can log more useful error messages.
 %% Instruments should all be created once at the start of an application
@@ -229,20 +224,19 @@ insert_new(Instrument=#instrument{name=Name}) ->
     end.
 
 instrument(Name, InstrumentKind, InstrumentConfig) ->
-    %% InstrumentKind must be a module that implements `ot_instrument'
-    try InstrumentKind:module_info() of
-        _ ->
-            #instrument{name=Name,
-                        description=maps:get(description, InstrumentConfig, <<>>),
-                        kind=InstrumentKind,
-                        number_kind=maps:get(number_kind, InstrumentConfig, integer),
-                        unit=maps:get(unit, InstrumentConfig, one),
-                        monotonic=maps:get(monotonic, InstrumentConfig),
-                        synchronous=maps:get(synchronous, InstrumentConfig)}
+    try
+        {true, #instrument{name=Name,
+                           description=maps:get(description, InstrumentConfig, <<>>),
+                           kind=InstrumentKind,
+                           number_kind=maps:get(number_kind, InstrumentConfig, integer),
+                           unit=maps:get(unit, InstrumentConfig, one),
+                           monotonic=maps:get(monotonic, InstrumentConfig),
+                           synchronous=maps:get(synchronous, InstrumentConfig)}}
     catch
-        error:undef ->
-            ?LOG_INFO("Unable to create instrument kind because the kind must be a module.",
+        error:{badkey, Key} ->
+            ?LOG_INFO("Unable to create instrument because instrument map missing required key.",
                       #{instrument_name => Name,
-                        instrument_kind => InstrumentKind}),
-            {error, kind_not_a_module}
+                        missing_key => Key}),
+
+            false
     end.
