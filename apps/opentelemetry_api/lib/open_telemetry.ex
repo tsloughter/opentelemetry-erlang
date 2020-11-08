@@ -5,8 +5,8 @@ defmodule OpenTelemetry do
   SpanId (`t:span_id/0`), and a start and end time in nanoseconds.
 
   This module provides declaration of the types used throughout the library, as well as functions for
-  building the additional pieces of a span that are optional. Each item can be attached to individual
-  Span using the functions in `OpenTelemetry.Span` module.
+  building the additional pieces of a span that are optional, e.g. `t:events/0`.
+  Each item can be attached to individual Span using the functions in `OpenTelemetry.Span` module.
 
   ## Example
 
@@ -15,13 +15,11 @@ defmodule OpenTelemetry do
 
       OpenTelemetry.register_application_tracer(:this_otp_app)
 
-      Tracer.start_span("some-span")
-      ...
-      event = "ecto.query"
-      ecto_attributes = OpenTelemetry.event([{"query", query}, {"total_time", total_time}])
-      OpenTelemetry.Span.add_event(event, ecto_event)
-      ...
-      Tracer.end_span()
+      Tracer.with_span("some-span") do
+        ...
+        Span.set_attribute("attr-1", "value-1")
+        ...
+
   """
 
   @typedoc """
@@ -107,6 +105,7 @@ defmodule OpenTelemetry do
   text description and key-value pairs.
   """
   @type event() :: :opentelemetry.event()
+  @type events() :: [:opentelemetry.event()]
   @type event_name() :: :opentelemetry.event_name()
 
   @typedoc """

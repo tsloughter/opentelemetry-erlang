@@ -12,7 +12,18 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%
-%% @doc
+%% @doc Behaviour and API for propagation of Context.
+%%
+%% An implementation of the `otel_propagator' behaviour must implement the
+%% `inject/1' and `extract/2' callbacks. Inject is passed a term, for example
+%% the Span Context or Baggage, and returns a carrier, such as HTTP headers,
+%% to use for propagation in a request.
+%%
+%% Extract is passed the carrier, such as HTTP headers, and returns the term
+%% that will be set in the Context.
+%%
+%% Propagation API Specification:
+%%    https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/context/api-propagators.md
 %% @end
 %%%-------------------------------------------------------------------------
 -module(otel_propagator).

@@ -19,7 +19,7 @@ defmodule OpenTelemetry.MixProject do
       # homepage_url: "http://YOUR_PROJECT_HOMEPAGE",
       test_coverage: [tool: :covertool],
       docs: [
-        markdown_processor: ExDoc.Markdown.Cmark,
+        # markdown_processor: ExDoc.Markdown.Cmark,
         main: "OpenTelemetry",
         # logo: "path/to/logo.png",
         extras: erlang_docs()
@@ -52,8 +52,8 @@ defmodule OpenTelemetry.MixProject do
       dep when is_atom(dep) -> {dep, ">= 0.0.0"}
     end)
     |> Enum.concat([
-      {:cmark, "~> 0.7", only: :dev, runtime: false},
-      {:ex_doc, "~> 0.21", only: :dev, runtime: false},
+      {:cmark, "~> 0.9", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.23", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
       {:covertool, ">= 0.0.0", only: :test}
     ])
