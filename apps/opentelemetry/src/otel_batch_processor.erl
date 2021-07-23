@@ -239,23 +239,44 @@ init_exporter({ExporterModule, Config}) when is_atom(ExporterModule) ->
         ignore ->
             undefined
     catch
-        error:badarg when ExporterModule =:= opentelemetry_exporter ->
+        error:badarg:StackTrace when ExporterModule =:= opentelemetry_exporter ->
+            %% logging in debug level since config argument in stacktrace could have secrets
+            ?LOG_DEBUG("OTLP tracer, ~p, failed to initialize with exception error:badarg. stacktrace=~p",
+                       [ExporterModule, StackTrace]),
             case maps:get(protocol, Config, undefined) of
                 grpc ->
-                    ?LOG_WARNING("OTLP tracer, ~p, failed to initialize when using GRPC protocol. Verify you have the `grpcbox` dependency included.", [ExporterModule]),
-                    undefined;
+                    %% grpc protocol uses grpcbox which is not included by default
+                    %% this will check if it is available so we can warn the user if
+                    %% the dependency needs to be added
+                    try grpcbox:module_info() of
+                        _ ->
+                            undefined
+                    catch
+                        _:_ ->
+                            ?LOG_WARNING("OTLP tracer, ~p, failed to initialize when using GRPC protocol and `grpcbox` module is not available in the code path. Verify that you have the `grpcbox` dependency included and rerun.", [ExporterModule]),
+                            undefined
+                    end;
                 _ ->
-                    %% leaving out config from the log since it might have secrets
-                    ?LOG_WARNING("Trace exporter module ~p threw exception when initializing: error:badarg", [ExporterModule])
+                    ?LOG_WARNING("OTLP tracer, ~p, failed to initialize with exception error:badarg", [ExporterModule]),
+                    undefined
             end;
-        error:undef when ExporterModule =:= opentelemetry_exporter ->
+        error:undef:S when ExporterModule =:= opentelemetry_exporter ->
+            %% logging in debug level since config argument in stacktrace could have secrets
+            ?LOG_DEBUG("Trace exporter module ~p threw exception when initializing: error:undef:~p",
+                       [ExporterModule, S]),
             ?LOG_WARNING("Trace exporter module ~p not found. Verify you have included the `opentelemetry_exporter` dependency.", [ExporterModule]),
             undefined;
-        error:undef ->
+        error:undef:S ->
+            %% logging in debug level since config argument in stacktrace could have secrets
+            ?LOG_DEBUG("Trace exporter module ~p threw exception when initializing: error:undef:~p",
+                       [ExporterModule, S]),
             ?LOG_WARNING("Trace exporter module ~p not found. Verify you have included the dependency that contains the exporter module.", [ExporterModule]),
             undefined;
-        C:T ->
-            %% leaving out config from the log since it might have secrets
+        C:T:S ->
+            %% logging in debug level since config argument in stacktrace could have secrets
+            ?LOG_DEBUG("Trace exporter module ~p threw exception when initializing: ~p:~p:~p",
+                       [ExporterModule, C, T, S]),
+            %% log again without stacktrace but at a higher level
             ?LOG_WARNING("Trace exporter module ~p threw exception when initializing: ~p:~p", [ExporterModule, C, T]),
             undefined
     end;
