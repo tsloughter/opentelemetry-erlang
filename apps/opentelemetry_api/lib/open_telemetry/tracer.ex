@@ -34,7 +34,7 @@ defmodule OpenTelemetry.Tracer do
   """
   defmacro start_span(name, opts \\ quote(do: %{})) do
     quote bind_quoted: [name: name, start_opts: opts] do
-      :otel_tracer.start_span(:opentelemetry.get_tracer(__MODULE__), name, Map.new(start_opts))
+      :otel_tracer.start_span(:opentelemetry.get_application_tracer(__MODULE__), name, Map.new(start_opts))
     end
   end
 
@@ -47,7 +47,7 @@ defmodule OpenTelemetry.Tracer do
     quote bind_quoted: [ctx: ctx, name: name, start_opts: opts] do
       :otel_tracer.start_span(
         ctx,
-        :opentelemetry.get_tracer(__MODULE__),
+        :opentelemetry.get_application_tracer(__MODULE__),
         name,
         Map.new(start_opts)
       )
@@ -79,7 +79,7 @@ defmodule OpenTelemetry.Tracer do
   defmacro with_span(name, start_opts \\ quote(do: %{}), do: block) do
     quote do
       :otel_tracer.with_span(
-        :opentelemetry.get_tracer(__MODULE__),
+        :opentelemetry.get_application_tracer(__MODULE__),
         unquote(name),
         Map.new(unquote(start_opts)),
         fn _ -> unquote(block) end
@@ -98,7 +98,7 @@ defmodule OpenTelemetry.Tracer do
     quote do
       :otel_tracer.with_span(
         unquote(ctx),
-        :opentelemetry.get_tracer(__MODULE__),
+        :opentelemetry.get_application_tracer(__MODULE__),
         unquote(name),
         Map.new(unquote(start_opts)),
         fn _ -> unquote(block) end

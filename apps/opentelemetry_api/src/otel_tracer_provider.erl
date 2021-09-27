@@ -21,6 +21,8 @@
 
 -export([start_link/2,
          resource/0,
+         get/1,
+         get/2,
          register_application_tracer/1,
          register_tracer/2]).
 
@@ -32,6 +34,7 @@
 -type cb_state() :: term().
 
 -callback init(term()) -> {ok, cb_state()}.
+-callback get_tracer(atom(), binary(), cb_state()) -> boolean().
 -callback register_tracer(atom(), binary(), cb_state()) -> boolean().
 -callback resource(cb_state()) -> term() | undefined.
 
@@ -49,6 +52,20 @@ resource() ->
             %% ignore because no SDK has been included and started
             undefined
     end.
+
+-spec get(atom()) -> opentelemetry:tracer().
+get(Name) ->
+    get(Name, undefined).
+
+-spec get(atom(), binary() | undefined) -> opentelemetry:tracer().
+get(Name, Vsn) ->
+    try
+        gen_server:call(?MODULE, {get_tracer, Name, Vsn})
+    catch exit:{noproc, _} ->
+            %% ignore register_tracer because no SDK has been included and started
+            {otel_tracer_noop, []}
+    end.
+
 
 -spec register_tracer(atom(), binary()) -> boolean().
 register_tracer(Name, Vsn) ->
@@ -79,6 +96,10 @@ init([ProviderModule, Opts]) ->
             Other
     end.
 
+handle_call({get_tracer, Name, Vsn}, _From, State=#state{callback=Cb,
+                                                         cb_state=CbState}) ->
+    Tracer = Cb:get_tracer(Name, Vsn, CbState),
+    {reply, Tracer, State};
 handle_call({register_tracer, Name, Vsn, Modules}, _From, State=#state{callback=Cb,
                                                                        cb_state=CbState}) ->
     _ = Cb:register_tracer(Name, Vsn, Modules, CbState),
