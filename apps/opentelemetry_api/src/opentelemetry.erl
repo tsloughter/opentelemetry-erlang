@@ -29,8 +29,6 @@
 -module(opentelemetry).
 
 -export([set_default_tracer/1,
-         register_tracer/2,
-         register_tracer/3,
          register_applications/1,
          get_tracer/0,
          get_tracer/1,
@@ -152,16 +150,6 @@ set_default_tracer(Tracer) ->
 set_tracer(Name, Tracer) ->
     verify_and_set_term(Tracer, ?TRACER_KEY(Name), otel_tracer).
 
--spec register_tracer(atom(), string() | binary()) -> boolean().
-register_tracer(Name, Vsn) when is_atom(Name) ->
-    register_tracer(Name, Vsn, undefined).
-
--spec register_tracer(atom(), string() | binary(), uri_string:uri_string() | undefined) -> boolean().
-register_tracer(Name, Vsn, SchemaUrl) when is_atom(Name) , (is_list(Vsn) orelse is_binary(Vsn)) ->
-    otel_tracer_provider:register_tracer(Name, unicode:characters_to_binary(Vsn), SchemaUrl);
-register_tracer(_, _, _) ->
-    false.
-
 -spec register_applications([atom()]) -> ok.
 register_applications(Applications) ->
     TracerMap = lists:foldl(fun(Application, Acc) ->
@@ -191,8 +179,17 @@ get_tracer(Name) ->
 
 -spec get_tracer(atom(), unicode:chardata(), uri_string:uri_string()) -> tracer().
 get_tracer(Name, Vsn, SchemaUrl) ->
-    {Module, Tracer} = persistent_term:get(?TRACER_KEY(Name), get_tracer()),
-    {Module, Module:update_instrumentation_library(Vsn, SchemaUrl, Tracer)}.
+    %% check cache and then use provider to get the tracer if it isn't cached yet
+    case persistent_term:get(?TRACER_KEY(Name), undefined) of
+        undefined ->
+            VsnBin = vsn_to_binary(Vsn),
+            Tracer = otel_tracer_provider:get_tracer(Name, VsnBin, SchemaUrl),
+            _ = set_tracer(Name, Vsn, SchemaUrl, Tracer),
+            Tracer;
+        Tracer ->
+            Tracer
+    end.
+    %% {Module, Module:update_instrumentation_library(Vsn, SchemaUrl, Tracer)}.
 
 -spec get_application_tracer(module()) -> tracer().
 get_application_tracer(ModuleName) ->
