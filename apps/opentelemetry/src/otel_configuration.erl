@@ -21,6 +21,7 @@
 
 -export([merge_with_os/1,
          merge_list_with_environment/3,
+         transform/2,
          report_cb/1]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -381,8 +382,19 @@ transform(boolean, "false") ->
     false;
 transform(url, Value=#{}) ->
     Value;
+transform(url, Value) when is_list(Value) ; is_binary(Value) ->
+    case uri_string:parse(Value) of
+        {error, Reason, Term} ->
+            ?LOG_WARNING("Ignoring url ~p because uri_string:parse/1 returned error ~p ~p",
+                         [Value, Reason, Term]),
+            throw(transform_bad_url);
+        ParsedUri ->
+            ParsedUri
+    end;
 transform(url, Value) ->
-    uri_string:parse(Value);
+    ?LOG_WARNING("Ignoring url ~p because ~p is not a string or uri_string:uri_map()",
+                 [Value]),
+    throw(transform_url_not_string);
 %% convert sampler string to usable configuration term
 transform(sampler, {"parentbased_always_on", _}) ->
     {parent_based, #{root => always_on}};

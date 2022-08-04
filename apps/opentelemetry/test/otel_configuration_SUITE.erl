@@ -21,7 +21,7 @@ all() ->
      log_level, propagators, propagators_b3, propagators_b3multi, otlp_exporter,
      jaeger_exporter, zipkin_exporter, none_exporter, app_env_exporter,
      otlp_metrics_exporter, none_metrics_exporter, span_limits, bad_span_limits,
-     bad_app_config, deny_list, resource_detectors, span_processors].
+     bad_app_config, deny_list, resource_detectors, span_processors, transforms].
 
 init_per_testcase(empty_os_environment, Config) ->
     Vars = [],
@@ -182,12 +182,7 @@ init_per_testcase(bad_span_limits, Config) ->
                                   attribute_per_link_limit=128},
 
     [{expected_opts, ExpectedOpts}, {expected_record, ExpectedRecord}, {os_vars, Vars} | Config];
-init_per_testcase(bad_app_config, Config) ->
-    [{os_vars, []} | Config];
-init_per_testcase(app_env_exporter, Config) ->
-
-    [{os_vars, []} | Config];
-init_per_testcase(span_processors, Config) ->
+init_per_testcase(_, Config) ->
     [{os_vars, []} | Config].
 
 end_per_testcase(_, Config) ->
@@ -411,6 +406,12 @@ span_processors(_Config) ->
                                                             exporting_timeout_ms := 2}}]},
                  otel_configuration:merge_with_os([{span_processor, simple},
                                                    {ssp_exporting_timeout_ms, 2}])),
+
+    ok.
+
+transforms(_Config) ->
+    ?assertThrow(transform_url_not_string, otel_configuration:transform(url, '/')),
+    ?assertThrow(transform_bad_url, otel_configuration:transform(url, ":")),
 
     ok.
 
