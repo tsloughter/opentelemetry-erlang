@@ -63,6 +63,13 @@
 -define(TABLE_2, otel_export_table2).
 -define(CURRENT_TABLE, persistent_term:get(?CURRENT_TABLES_KEY)).
 
+%% config is either a single term or a 2-tuple
+-define(EXPORTER_CONFIG_IS_NONE(ExporterConfig),
+        ExporterConfig =:= undefined orelse ExporterConfig =:= none
+        orelse (is_tuple(ExporterConfig)
+                andalso (element(1, ExporterConfig) =:= undefined
+                         orelse element(1, ExporterConfig) =:= none))).
+
 -define(DEFAULT_MAX_QUEUE_SIZE, 2048).
 -define(DEFAULT_SCHEDULED_DELAY_MS, timer:seconds(5)).
 -define(DEFAULT_EXPORTER_TIMEOUT_MS, timer:minutes(5)).
@@ -122,7 +129,7 @@ init([Args]) ->
 
     %% only enable export table if there is going to be an exporter
     case maps:get(exporter, Args, none) of
-        ExporterConfig when ExporterConfig =:= none ; ExporterConfig =:= undefined ->
+        ExporterConfig when ?EXPORTER_CONFIG_IS_NONE(ExporterConfig) ->
             disable();
         ExporterConfig ->
             enable()
@@ -143,56 +150,34 @@ init([Args]) ->
 callback_mode() ->
     [state_functions, state_enter].
 
-idle(enter, _OldState, Data=#data{exporter=undefined,
-                                  exporter_config=ExporterConfig,
-                                  scheduled_delay_ms=SendInterval}) ->
-    Exporter = init_exporter(ExporterConfig),
-    {keep_state, Data#data{exporter=Exporter}, [{{timeout, export_spans}, SendInterval, export_spans}]};
 idle(enter, _OldState, #data{scheduled_delay_ms=SendInterval}) ->
     {keep_state_and_data, [{{timeout, export_spans}, SendInterval, export_spans}]};
-idle(_, export_spans, Data=#data{exporter=undefined,
-                                 exporter_config=ExporterConfig}) ->
-    Exporter = init_exporter(ExporterConfig),
-    {next_state, exporting, Data#data{exporter=Exporter}};
+idle(_, export_spans, #data{exporter=undefined,
+                            exporter_config=ExporterConfig,
+                            scheduled_delay_ms=SendInterval})
+  when ?EXPORTER_CONFIG_IS_NONE(ExporterConfig) ->
+    %% nothing to do until `set_exporter' is called
+    {keep_state_and_data, [{{timeout, export_spans}, SendInterval, export_spans}]};
 idle(_, export_spans, Data) ->
-    {next_state, exporting, Data};
+    {next_state, exporting, Data, [{next_event, internal, do_export}]};
 idle(EventType, Event, Data) ->
     handle_event_(idle, EventType, Event, Data).
 
-%% receiving an `export_spans' timeout while exporting means the `ExportingTimeout'
-%% is shorter than the `SendInterval'. Postponing the event will ensure we export
-%% after
-exporting({timeout, export_spans}, export_spans, _) ->
+%% received a manual `export_spans' request or the `SendInterval' is shorter
+%% than the `ExportingTimeout'. Either way, just postpone the event and
+%% handle when back to `idle'
+exporting(_, export_spans, _) ->
     {keep_state_and_data, [postpone]};
-exporting(enter, _OldState, #data{exporter=undefined}) ->
-    %% exporter still undefined, go back to idle
-    %% first empty the table and disable the processor so no more spans are added
-    %% we wait until the attempt to export to disable so we don't lose spans
-    %% on startup but disable once it is clear an exporter isn't being set
-    clear_table_and_disable(),
-
-    %% use state timeout to transition to `idle' since we can't set a
-    %% new state in an `enter' handler
-    {keep_state_and_data, [{state_timeout, 0, no_exporter}]};
-exporting(enter, _OldState, Data=#data{exporting_timeout_ms=ExportingTimeout,
-                                       scheduled_delay_ms=SendInterval}) ->
+exporting(internal, do_export, Data=#data{exporting_timeout_ms=ExportingTimeout,
+                                          scheduled_delay_ms=SendInterval}) ->
     case export_spans(Data) of
         ok ->
-            %% in an `enter' handler we can't return a `next_state' or `next_event'
-            %% so we rely on a timeout to trigger the transition to `idle'
-            {keep_state, Data#data{runner_pid=undefined}, [{state_timeout, 0, empty_table}]};
-        {OldTableName, RunnerPid} ->
-            {keep_state, Data#data{runner_pid=RunnerPid,
-                                   handed_off_table=OldTableName},
+            {next_state, idle, Data#data{runner_pid=undefined}};
+        Data1 ->
+            {keep_state, Data1,
              [{state_timeout, ExportingTimeout, exporting_timeout},
               {{timeout, export_spans}, SendInterval, export_spans}]}
     end;
-
-%% two hacks since we can't transition to a new state or send an action from `enter'
-exporting(state_timeout, no_exporter, Data) ->
-    {next_state, idle, Data};
-exporting(state_timeout, empty_table, Data) ->
-    {next_state, idle, Data};
 
 exporting(state_timeout, exporting_timeout, Data=#data{handed_off_table=ExportingTable}) ->
     %% kill current exporting process because it is taking too long
@@ -218,7 +203,7 @@ exporting(EventType, Event, Data) ->
 handle_event_(exporting, _, force_flush, _Data) ->
     {keep_state_and_data, [postpone]};
 handle_event_(_State, _, force_flush, Data) ->
-    {next_state, exporting, Data};
+    {next_state, exporting, Data, [{next_event, internal, do_export}]};
 
 handle_event_(_State, {timeout, check_table_size}, check_table_size, #data{max_queue_size=infinity}) ->
     keep_state_and_data;
@@ -231,19 +216,21 @@ handle_event_(_State, {timeout, check_table_size}, check_table_size, #data{max_q
             enable(),
             keep_state_and_data
     end;
+handle_event_(_, {call, From}, {set_exporter, ExporterConfig}, Data=#data{exporter=OldExporter})
+  when ?EXPORTER_CONFIG_IS_NONE(ExporterConfig) ->
+    otel_exporter:shutdown(OldExporter),
+    clear_table_and_disable() ,
+    {keep_state, Data#data{exporter=undefined,
+                           exporter_config=ExporterConfig}, [{reply, From, ok}]};
 handle_event_(_, {call, From}, {set_exporter, ExporterConfig}, Data=#data{exporter=OldExporter}) ->
     otel_exporter:shutdown(OldExporter),
 
-    %% enable immediately or else spans will be dropped for a period even after this call returns
+    %% enable immediately or else spans will be dropped for a period
+    %% even after this call returns
     enable(),
 
     {keep_state, Data#data{exporter=undefined,
-                           exporter_config=ExporterConfig}, [{reply, From, ok},
-                                                             {next_event, internal, init_exporter}]};
-handle_event_(_, internal, init_exporter, Data=#data{exporter=undefined,
-                                                     exporter_config=ExporterConfig}) ->
-    Exporter = init_exporter(ExporterConfig),
-    {keep_state, Data#data{exporter=Exporter}};
+                           exporter_config=ExporterConfig}, [{reply, From, ok}]};
 handle_event_(_, _, _, _) ->
     keep_state_and_data.
 
@@ -320,8 +307,17 @@ new_export_table(Name) ->
                     %% for each instrumentation_scope and export together.
                     {keypos, #span.instrumentation_scope}]).
 
-export_spans(#data{exporter=Exporter,
-                   resource=Resource}) ->
+export_spans(Data=#data{exporter=undefined,
+                        exporter_config=ExporterConfig}) ->
+    case init_exporter(ExporterConfig) of
+        undefined ->
+            %% nothing to do, no exporter could be initialized
+            ok;
+        Exporter ->
+            export_spans(Data#data{exporter=Exporter})
+    end;
+export_spans(Data=#data{exporter=Exporter,
+                        resource=Resource}) ->
     CurrentTable = ?CURRENT_TABLE,
     case ets:info(CurrentTable, size) of
         0 ->
@@ -343,7 +339,9 @@ export_spans(#data{exporter=Exporter,
             Self = self(),
             RunnerPid = erlang:spawn_link(fun() -> send_spans(Self, Resource, Exporter) end),
             ets:give_away(CurrentTable, RunnerPid, export),
-            {CurrentTable, RunnerPid}
+
+            Data#data{runner_pid=RunnerPid,
+                      handed_off_table=CurrentTable}
     end.
 
 %% Additional benefit of using a separate process is calls to `register` won't
