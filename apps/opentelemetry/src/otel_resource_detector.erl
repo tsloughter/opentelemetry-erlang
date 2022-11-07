@@ -29,7 +29,8 @@
 
 -export([start_link/1,
          get_resource/0,
-         get_resource/1]).
+         get_resource/1,
+         stop/0]).
 
 -export([init/1,
          callback_mode/0,
@@ -69,6 +70,9 @@ get_resource(Timeout) ->
             otel_resource:create([])
     end.
 
+stop() ->
+    gen_statem:call(?MODULE, stop, 5000).
+
 init([#{resource_detectors := Detectors,
         resource_detector_timeout := DetectorTimeout}]) ->
     process_flag(trap_exit, true),
@@ -104,6 +108,8 @@ handle_event(state_timeout, resource_detector_timeout, {collecting, [{_, Pid, De
     erlang:unlink(Pid),
     erlang:exit(Pid, kill),
     {next_state, next_state(Rest), Data, state_timeout(Data)};
+handle_event({call, From}, stop, _, _) ->
+    {stop_and_reply, normal, [{reply, From, ok}]};
 handle_event(info, _, _, _Data) ->
     %% merging resources must be done in order, so postpone the message
     %% if it isn't the head of the list
