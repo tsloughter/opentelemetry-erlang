@@ -257,28 +257,36 @@ code_change(State) ->
 %%
 
 instruments_tab(Name) ->
-    ets:new(list_to_atom(lists:concat([instruments, "_", Name])), [set,
-                                                                   named_table,
-                                                                   {keypos, 1},
-                                                                   protected]).
+    ets:new(list_to_atom(lists:concat([instruments, "_", Name])),
+            [set,
+             named_table,
+             {keypos, 1},
+             protected]).
 
 callbacks_tab(Name) ->
-    ets:new(list_to_atom(lists:concat([callbacks, "_", Name])), [bag,
-                                                                 named_table,
-                                                                 {keypos, 1},
-                                                                 protected]).
+    ets:new(list_to_atom(lists:concat([callbacks, "_", Name])),
+            [bag,
+             named_table,
+             {keypos, 1},
+             protected]).
 
 view_aggregations_tab(Name) ->
-    ets:new(list_to_atom(lists:concat([view_aggregations, "_", Name])), [bag,
-                                                                         named_table,
-                                                                         {keypos, 1},
-                                                                         public]).
+    ets:new(list_to_atom(lists:concat([view_aggregations, "_", Name])),
+            [bag,
+             named_table,
+             {keypos, 1},
+             %% access pattern is read heavy after initial writes on startup
+             {read_concurrency, true},
+             public]).
 
 metrics_tab(Name) ->
-    ets:new(list_to_atom(lists:concat([metrics, "_", Name])), [set,
-                                                               named_table,
-                                                               {keypos, 2},
-                                                               public]).
+    ets:new(list_to_atom(lists:concat([metrics, "_", Name])),
+            [set,
+             named_table,
+             {keypos, 2},
+             %% access pattern for Metrics is write heavy
+             {write_concurrency, true},
+             public]).
 
 new_view(ViewConfig) ->
     Name = maps:get(name, ViewConfig, undefined),
