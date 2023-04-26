@@ -13,7 +13,8 @@ defmodule OpenTelemetry.MixProject do
       deps: [
         {:opentelemetry_semantic_conventions, "~> 0.2"},
         {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
-        {:covertool, ">= 0.0.0", only: :test}
+        {:covertool, ">= 0.0.0", only: :test},
+        {:gradient, github: "esl/gradient", only: [:dev], runtime: false}
       ],
       name: "OpenTelemetry API",
       test_coverage: [tool: :covertool],
