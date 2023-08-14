@@ -48,10 +48,13 @@ start_span(Ctx, Name, Sampler, IdGenerator, Opts) ->
 
     Kind = maps:get(kind, Opts, ?SPAN_KIND_INTERNAL),
     StartTime = maps:get(start_time, Opts, opentelemetry:timestamp()),
-    new_span(Ctx, Name, Sampler, IdGenerator, StartTime, Kind, Attributes, Events, Links).
 
-new_span(Ctx, Name, Sampler, IdGeneratorModule, StartTime, Kind, Attributes, Events, Links) ->
-    {NewSpanCtx, ParentSpanId} = new_span_ctx(Ctx, IdGeneratorModule),
+    Tracestate = maps:get(tracestate, Opts, undefined),
+
+    new_span(Ctx, Name, Sampler, IdGenerator, StartTime, Kind, Attributes, Events, Links, Tracestate).
+
+new_span(Ctx, Name, Sampler, IdGeneratorModule, StartTime, Kind, Attributes, Events, Links, Tracestate) ->
+    {NewSpanCtx, ParentSpanId} = new_span_ctx(Ctx, IdGeneratorModule, Tracestate),
 
     TraceId = NewSpanCtx#span_ctx.trace_id,
     SpanId = NewSpanCtx#span_ctx.span_id,
@@ -77,16 +80,25 @@ new_span(Ctx, Name, Sampler, IdGeneratorModule, StartTime, Kind, Attributes, Eve
                          is_valid=true,
                          is_recording=IsRecording}, Span}.
 
--spec new_span_ctx(otel_ctx:t(), otel_id_generator:t()) -> {opentelemetry:span_ctx(), opentelemetry:span_id() | undefined}.
-new_span_ctx(Ctx, IdGeneratorModule) ->
-    case otel_tracer:current_span_ctx(Ctx) of
+-spec new_span_ctx(otel_ctx:t(), otel_id_generator:t(), otel_tracestate:t() | undefined) ->
+          {opentelemetry:span_ctx(), opentelemetry:span_id() | undefined}.
+new_span_ctx(Ctx, IdGeneratorModule, Tracestate) ->
+    {NewSpanCtx, NewSpanId} =
+        case otel_tracer:current_span_ctx(Ctx) of
+            undefined ->
+                {root_span_ctx(IdGeneratorModule), undefined};
+            #span_ctx{is_valid=false} ->
+                {root_span_ctx(IdGeneratorModule), undefined};
+            ParentSpanCtx=#span_ctx{span_id=ParentSpanId} ->
+                %% keep the rest of the parent span ctx, simply need to update the span_id
+                {ParentSpanCtx#span_ctx{span_id=IdGeneratorModule:generate_span_id()}, ParentSpanId}
+        end,
+
+    case Tracestate of
         undefined ->
-            {root_span_ctx(IdGeneratorModule), undefined};
-        #span_ctx{is_valid=false} ->
-            {root_span_ctx(IdGeneratorModule), undefined};
-        ParentSpanCtx=#span_ctx{span_id=ParentSpanId} ->
-            %% keep the rest of the parent span ctx, simply need to update the span_id
-            {ParentSpanCtx#span_ctx{span_id=IdGeneratorModule:generate_span_id()}, ParentSpanId}
+            {NewSpanCtx, NewSpanId};
+        _ ->
+            {NewSpanCtx#span_ctx{tracestate=Tracestate}, NewSpanId}
     end.
 
 root_span_ctx(IdGeneratorModule) ->

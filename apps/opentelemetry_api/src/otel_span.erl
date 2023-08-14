@@ -52,11 +52,15 @@
                                  is_binary(Value) orelse
                                  is_list(Value)).
 
--type start_opts() :: #{attributes => opentelemetry:attributes_map(),
-                        links => [opentelemetry:link()],
-                        is_recording => boolean(),
-                        start_time => opentelemetry:timestamp(),
-                        kind => opentelemetry:span_kind()}.
+-type start_opts() :: #{attributes := opentelemetry:attributes_map(),
+                        links := [opentelemetry:link()],
+                        is_recording := boolean(),
+                        start_time := opentelemetry:timestamp(),
+                        kind := opentelemetry:span_kind(),
+                        monitor := boolean(),
+                        %% undefined `tracestate' means not set by the user and to
+                        %% use the parent `tracestate', if there is a parent
+                        tracestate := otel_tracestate:new() | undefined}.
 
 -export_type([start_opts/0]).
 
@@ -67,12 +71,14 @@ validate_start_opts(Opts) when is_map(Opts) ->
     Kind = maps:get(kind, Opts, ?SPAN_KIND_INTERNAL),
     StartTime = maps:get(start_time, Opts, opentelemetry:timestamp()),
     IsRecording = maps:get(is_recording, Opts, true),
+    Tracestate = maps:get(tracestate, Opts, undefined),
     #{
       attributes => process_attributes(Attributes),
       links => Links,
       kind => Kind,
       start_time => StartTime,
-      is_recording => IsRecording
+      is_recording => IsRecording,
+      tracestate => Tracestate
      }.
 
 -spec is_recording(SpanCtx) -> boolean() when
@@ -191,11 +197,11 @@ hex_span_id(#span_ctx{span_id=SpanId}) ->
             <<>>
     end.
 
--spec tracestate(opentelemetry:span_ctx() | undefined) -> opentelemetry:tracestate().
+-spec tracestate(opentelemetry:span_ctx() | undefined) -> otel_tracestate:t().
 tracestate(#span_ctx{tracestate=Tracestate}) ->
     Tracestate;
 tracestate(_) ->
-    [].
+    otel_tracestate:new().
 
 -spec set_attribute(SpanCtx, Key, Value) -> boolean() when
       Key :: opentelemetry:attribute_key(),
