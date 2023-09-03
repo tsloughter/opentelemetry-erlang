@@ -35,11 +35,18 @@
          builtin_to_module/1]).
 
 %% Sets a value into a carrier
+%% @deprecated Use inject/3 with an explicit context
 -callback inject(t(), carrier()) -> carrier().
 -callback inject_from(otel_ctx:t(), t(), carrier()) -> carrier().
+
+-callback inject(otel_ctx:t(), t(), carrier()) -> carrier().
+
 %% extracts values from a carrier and sets them in the context
+%% @deprecated Use extract/3 with an explicit context
 -callback extract(t(), carrier()) -> otel_ctx:t() | otel_ctx:token().
 -callback extract_to(otel_ctx:t(), t(), carrier()) -> otel_ctx:t().
+
+-callback extract(otel_ctx:t(), t(), carrier()) -> otel_ctx:t().
 
 -type t() :: builtin() | module() | {module(), term()}.
 

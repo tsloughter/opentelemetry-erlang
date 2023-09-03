@@ -58,18 +58,28 @@
 -behaviour(otel_propagator).
 
 -export([fields/1,
-         inject/1,
+
          inject/2,
          inject/3,
+         inject/4,
+
          inject_from/2,
          inject_from/3,
          inject_from/4,
-         extract/1,
+
          extract/2,
-         extract/4,
+         extract/3,
+         extract/5,
+
          extract_to/2,
          extract_to/3,
          extract_to/5]).
+
+
+%% deprecated functions with implicit context
+-export([inject/1,
+         extract/1,
+         extract/4]).
 
 -export([default_carrier_get/2,
          default_carrier_set/3,
@@ -117,18 +127,35 @@ fields(Propagator) when is_atom(Propagator) ->
 fields({Module, Options}) ->
     Module:fields(Options).
 
+%% @deprecated Use the `inject/2' functions
 -spec inject(otel_propagator:carrier()) -> otel_propagator:carrier().
 inject(Carrier) ->
     Propagator = opentelemetry:get_text_map_injector(),
+    %% eqwalizer:ignore deprecated function
     inject(Propagator, Carrier, fun default_carrier_set/3).
 
--spec inject(otel_propagator:t(), otel_propagator:carrier()) -> otel_propagator:carrier().
+-spec inject(otel_ctx:t(), otel_propagator:carrier()) -> otel_propagator:carrier().
+inject(Context=#{}, Carrier) ->
+    Propagator = opentelemetry:get_text_map_injector(),
+    inject_from(Context, Propagator, Carrier, fun default_carrier_set/3);
+%% @deprecated Use the inject_from functions
+%% -spec inject(otel_propagator:t(), otel_propagator:carrier()) -> otel_propagator:carrier().
 inject(Propagator, Carrier) ->
+    %% eqwalizer:ignore deprecated function
     inject(Propagator, Carrier, fun default_carrier_set/3).
 
--spec inject(otel_propagator:t(), otel_propagator:carrier(), fun()) -> otel_propagator:carrier().
+-spec inject(otel_ctx:t(), otel_propagator:t(), otel_propagator:carrier()) -> otel_propagator:carrier().
+inject(Context=#{}, Propagator, Carrier) ->
+    inject_from(Context, Propagator, Carrier, fun default_carrier_set/3);
+%% @deprecated Use the inject_from functions
+%% -spec inject(otel_propagator:t(), otel_propagator:carrier(), fun()) -> otel_propagator:carrier().
 inject(Propagator, Carrier, CarrierSetFun) ->
     Context = otel_ctx:get_current(),
+    %% eqwalizer:ignore deprecated function
+    inject_from(Context, Propagator, Carrier, CarrierSetFun).
+
+-spec inject(otel_ctx:t(), otel_propagator:t(), otel_propagator:carrier(), fun()) -> otel_propagator:carrier().
+inject(Context, Propagator, Carrier, CarrierSetFun) ->
     inject_from(Context, Propagator, Carrier, CarrierSetFun).
 
 -spec inject_from(otel_ctx:t(), otel_propagator:carrier()) -> otel_propagator:carrier().
@@ -146,20 +173,36 @@ inject_from(Context, Module, Carrier, CarrierSetFun) when is_atom(Module) ->
 inject_from(Context, {Module, Options}, Carrier, CarrierSetFun) ->
      Module:inject(Context, Carrier, CarrierSetFun, Options).
 
+%% @deprecated Use the `extract/2' functions
 -spec extract(otel_propagator:carrier()) -> otel_ctx:token().
 extract(Carrier) ->
     Propagator = opentelemetry:get_text_map_extractor(),
     extract(Propagator, Carrier, fun default_carrier_keys/1, fun default_carrier_get/2).
 
--spec extract(otel_propagator:t(), otel_propagator:carrier()) -> otel_ctx:token().
+-spec extract(otel_ctx:t(), otel_propagator:carrier()) -> otel_ctx:t().
+extract(Context=#{}, Carrier) ->
+    Propagator = opentelemetry:get_text_map_extractor(),
+    extract_to(Context, Propagator, Carrier, fun default_carrier_keys/1, fun default_carrier_get/2);
+%% @deprecated Use the `extract/3' functions
+%% -spec extract(otel_propagator:t(), otel_propagator:carrier()) -> otel_ctx:token().
 extract(Propagator, Carrier) ->
+    %% eqwalizer:ignore deprecated function
     extract(Propagator, Carrier, fun default_carrier_keys/1, fun default_carrier_get/2).
 
+-spec extract(otel_ctx:t(), otel_propagator:t(), otel_propagator:carrier()) -> otel_ctx:t().
+extract(Context, Propagator, Carrier) ->
+    extract_to(Context, Propagator, Carrier, fun default_carrier_keys/1, fun default_carrier_get/2).
+
+%% @deprecated Use the `extract/5' functions
 -spec extract(otel_propagator:t(), otel_propagator:carrier(), fun(), fun()) -> otel_ctx:token().
 extract(Propagator, Carrier, CarrierKeysFun, CarrierGetFun) ->
     Context = otel_ctx:get_current(),
     Context1 = extract_to(Context, Propagator, Carrier, CarrierKeysFun, CarrierGetFun),
     otel_ctx:attach(Context1).
+
+-spec extract(otel_ctx:t(), otel_propagator:t(), otel_propagator:carrier(), fun(), fun()) -> otel_ctx:t().
+extract(Context, Propagator, Carrier, CarrierKeysFun, CarrierGetFun) ->
+    extract_to(Context, Propagator, Carrier, CarrierKeysFun, CarrierGetFun).
 
 -spec extract_to(otel_ctx:t(), otel_propagator:carrier()) -> otel_ctx:t().
 extract_to(Context, Carrier) ->
