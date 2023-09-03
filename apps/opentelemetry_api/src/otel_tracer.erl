@@ -29,6 +29,10 @@
          current_span_ctx/1,
          update_logger_process_metadata/1]).
 
+%% uncomment when OTP-23 becomes the minimum required version
+%% -deprecated({start_span, 3, "Use start_span/4, passing an explicit context"}).
+%% -deprecated({with_span, 4, "Use with_span/5, passing an explicit context"}).
+
 -include("opentelemetry.hrl").
 
 -define(CURRENT_SPAN_CTX, {?MODULE, span_ctx}).
@@ -46,6 +50,7 @@
 -callback with_span(otel_ctx:t(), opentelemetry:tracer(),
                     opentelemetry:span_name(), otel_span:start_opts(), traced_fun(T)) -> T.
 
+%% @deprecated Use start_span/4, passing an explicit context
 -spec start_span(opentelemetry:tracer(), opentelemetry:span_name(), otel_span:start_opts())
                 -> opentelemetry:span_ctx().
 start_span(Tracer={Module, _}, SpanName, Opts) ->
@@ -66,6 +71,7 @@ start_span(Ctx, Tracer={Module, _}, SpanName, Opts) ->
             otel_tracer_noop:noop_span_ctx()
     end.
 
+%% @deprecated Use with_span/5, passing an explicit context
 -spec with_span(opentelemetry:tracer(), opentelemetry:span_name(), otel_span:start_opts(), traced_fun(T)) -> T.
 with_span(Tracer={Module, _}, SpanName, Opts, Fun) when is_atom(Module) ->
     case otel_span:is_valid_name(SpanName) of

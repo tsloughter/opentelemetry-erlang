@@ -157,7 +157,7 @@
 
 -include("gradualizer.hrl").
 
-%% @deprecated Start the TracerProvider through the SDK"
+%% @deprecated Start the TracerProvider through the SDK
 -spec start_tracer_provider(atom(), map()) -> {ok, pid() | undefined} | {error, term()}.
 start_tracer_provider(Name, Config) ->
     otel_tracer_provider:start(Name, Config).
