@@ -143,5 +143,7 @@ jobs:
         tar xvf elp-linux.tar.gz
     - name: Compile
       run: rebar3 compile
-    - name: eqWAlizer
-      run: ./elp eqwalize-all
+    - name: eqWAlizer API
+      run: ./elp eqwalize-app opentelemetry_api
+    - name: eqWAlizer SDK
+      run: ./elp eqwalize-app opentelemetry
