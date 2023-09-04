@@ -380,7 +380,7 @@ link(TraceId, SpanId, Attributes, TraceState) when is_integer(TraceId),
     #{trace_id => TraceId,
       span_id => SpanId,
       attributes => otel_attributes:process_attributes(Attributes),
-      tracestate => TraceState};
+      tracestate => otel_tracestate:new(TraceState)};
 link(_, _, _, _) ->
     undefined.
 

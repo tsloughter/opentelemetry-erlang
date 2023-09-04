@@ -79,7 +79,9 @@
 new() ->
     #tracestate{members=[]}.
 
--spec new([{unicode:latin1_chardata(), unicode:latin1_chardata()}]) -> t().
+-spec new([{unicode:latin1_chardata(), unicode:latin1_chardata()}] | t()) -> t().
+new(Tracestate=#tracestate{}) ->
+    Tracestate;
 new(List) ->
     Members = [Element || {Key, Value}=Element <- List, is_valid(Key, Value)],
     #tracestate{members=Members}.
