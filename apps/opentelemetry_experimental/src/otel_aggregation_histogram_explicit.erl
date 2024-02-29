@@ -135,7 +135,6 @@
 %% ignore eqwalizer errors in functions using a lot of matchspecs
 -eqwalizer({nowarn_function, checkpoint/3}).
 -eqwalizer({nowarn_function, collect/4}).
--dialyzer({nowarn_function, checkpoint/3}).
 -dialyzer({nowarn_function, aggregate/7}).
 -dialyzer({nowarn_function, collect/4}).
 -dialyzer({nowarn_function, maybe_delete_old_generation/4}).
@@ -209,48 +208,11 @@ aggregate(Ctx, Table, ExemplarsTab, #stream{name=Name,
             end
     end.
 
-checkpoint(Tab, #stream{name=Name,
-                        reader=ReaderId,
-                        temporality=?TEMPORALITY_DELTA}, Generation) ->
-    MS = [{#explicit_histogram_aggregation{key={Name, '$1', ReaderId, Generation},
-                                           start_time='$9',
-                                           explicit_bucket_boundaries='$2',
-                                           record_min_max='$3',
-                                           checkpoint='_',
-                                           bucket_counts='$5',
-                                           min='$6',
-                                           max='$7',
-                                           sum='$8'
-                                          },
-           [],
-           [{#explicit_histogram_aggregation{key={{{const, Name}, '$1', {const, ReaderId}, {const, Generation}}},
-                                             start_time='$9',
-                                             explicit_bucket_boundaries='$2',
-                                             record_min_max='$3',
-                                             checkpoint={#explicit_histogram_checkpoint{bucket_counts='$5',
-                                                                                        min='$6',
-                                                                                        max='$7',
-                                                                                        sum='$8',
-                                                                                        start_time='$9'}},
-                                             bucket_counts='$5',
-                                             min='$6',
-                                             max='$7',
-                                             sum='$8'}}]}],
-    _ = ets:select_replace(Tab, MS),
-
-    ok;
-checkpoint(_Tab, _, _) ->
-    %% no good way to checkpoint the `counters' without being out of sync with
-    %% min/max/sum, so may as well just collect them in `collect', which will
-    %% also be out of sync, but best we can do right now
-
-    ok.
-
-collect(Tab, ExemplarsTab, Stream=#stream{name=Name,
-                                          reader=ReaderId,
-                                          temporality=Temporality,
-                                          forget=Forget,
-                                          exemplar_reservoir=ExemplarReservoir}, Generation0) ->
+collect(Tab, ExemplarsTab, #stream{name=Name,
+                                   reader=ReaderId,
+                                   temporality=Temporality,
+                                   forget=Forget,
+                                   exemplar_reservoir=ExemplarReservoir}, Generation0) ->
     CollectionStartTime = opentelemetry:timestamp(),
     Generation = case Forget of
                      true ->
@@ -258,8 +220,6 @@ collect(Tab, ExemplarsTab, Stream=#stream{name=Name,
                      _ ->
                          0
                  end,
-
-    checkpoint(Tab, Stream, Generation),
 
     Select = [{#explicit_histogram_aggregation{key={Name, '$1', ReaderId, Generation},
                                                start_time='$2',
@@ -271,7 +231,10 @@ collect(Tab, ExemplarsTab, Stream=#stream{name=Name,
                                                max='$8',
                                                sum='$9'}, [], ['$_']}],
     AttributesAggregation = ets:select(Tab, Select),
-    Result = #histogram{datapoints=[datapoint(ExemplarReservoir, ExemplarsTab, CollectionStartTime, SumAgg) || SumAgg <- AttributesAggregation],
+    Result = #histogram{datapoints=[datapoint(ExemplarReservoir,
+                                              ExemplarsTab,
+                                              CollectionStartTime,
+                                              SumAgg) || SumAgg <- AttributesAggregation],
                         aggregation_temporality=Temporality},
 
     %% would be nice to do this in the reader so its not duplicated in each aggregator
@@ -299,36 +262,11 @@ datapoint(ExemplarReservoir, ExemplarsTab, CollectionStartTime,
              key=Key={_, Attributes, _, _},
              explicit_bucket_boundaries=Boundaries,
              start_time=StartTime,
-             checkpoint=undefined,
+             %% checkpoint=undefined,
              bucket_counts=BucketCounts,
              min=Min,
              max=Max,
              sum=Sum
-            }) ->
-    Exemplars = otel_metric_exemplar_reservoir:collect(ExemplarReservoir, ExemplarsTab, Key),
-    Buckets = get_buckets(BucketCounts, Boundaries),
-    #histogram_datapoint{
-       attributes=Attributes,
-       start_time=StartTime,
-       time=CollectionStartTime,
-       count=lists:sum(Buckets),
-       sum=Sum,
-       bucket_counts=Buckets,
-       explicit_bounds=Boundaries,
-       exemplars=Exemplars,
-       flags=0,
-       min=Min,
-       max=Max
-      };
-datapoint(ExemplarReservoir, ExemplarsTab, CollectionStartTime,
-          #explicit_histogram_aggregation{
-             key=Key={_, Attributes, _, _},
-             explicit_bucket_boundaries=Boundaries,
-             checkpoint=#explicit_histogram_checkpoint{bucket_counts=BucketCounts,
-                                                       min=Min,
-                                                       max=Max,
-                                                       sum=Sum,
-                                                       start_time=StartTime}
             }) ->
     Exemplars = otel_metric_exemplar_reservoir:collect(ExemplarReservoir, ExemplarsTab, Key),
     Buckets = get_buckets(BucketCounts, Boundaries),
