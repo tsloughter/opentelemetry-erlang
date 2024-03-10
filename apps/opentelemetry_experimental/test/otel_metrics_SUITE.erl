@@ -108,7 +108,9 @@
          end)()).
 
 all() ->
-    [default_view, provider_test, view_creation_test, wildcard_view, counter_add, multiple_readers,
+    [default_view, provider_test, %% view_creation_test,
+     wildcard_view, named_wildcard_view,
+     counter_add, multiple_readers,
      explicit_histograms, delta_explicit_histograms, delta_counter, cumulative_counter,
      kill_reader, kill_server, observable_counter, observable_updown_counter, observable_gauge,
      multi_instrument_callback, using_macros, float_counter, float_updown_counter, float_histogram,
@@ -160,6 +162,11 @@ init_per_testcase(multiple_readers, Config) ->
                                             default_aggregation_mapping =>
                                                 #{?KIND_COUNTER => otel_aggregation_drop}}}]),
 
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{selector => #{instrument_name => a_counter},
+                                aggregation_module => otel_aggregation_sum},
+                              #{selector => #{instrument_name => b_counter}}]),
+
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
     Config;
@@ -205,6 +212,12 @@ init_per_testcase(sync_delta_histogram, Config) ->
                                                                                  default_temporality_mapping =>
                                                                                      DeltaHistogramTemporality}}]),
 
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{name => http_req_view,
+                                selector => #{instrument_name => http_requests},
+                                aggregation_module => otel_aggregation_histogram_explicit,
+                                aggregation_options => #{explicit_bucket_boundaries => []}}]),
+
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
     Config;
@@ -215,6 +228,13 @@ init_per_testcase(sync_cumulative_histogram, Config) ->
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
                                                                                  default_temporality_mapping =>
                                                                                      DeltaHistogramTemporality}}]),
+
+
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{name => http_req_view,
+                                selector => #{instrument_name => http_requests},
+                                aggregation_module => otel_aggregation_histogram_explicit,
+                                aggregation_options => #{explicit_bucket_boundaries => []}}]),
 
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
@@ -257,6 +277,11 @@ init_per_testcase(simple_fixed_exemplars, Config) ->
 
     ok = application:set_env(opentelemetry_experimental, exemplars_enabled, true),
     ok = application:set_env(opentelemetry_experimental, exemplar_filter, always_on),
+
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{selector => #{instrument_name => test_exemplar_counter},
+                                aggregation_module => otel_aggregation_sum,
+                                attribute_keys => [<<"c">>]}]),
 
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
@@ -306,6 +331,11 @@ init_per_testcase(observable_exemplars, Config) ->
     ok = application:set_env(opentelemetry_experimental, exemplars_enabled, true),
     ok = application:set_env(opentelemetry_experimental, exemplar_filter, always_on),
 
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{selector => #{instrument_name => a_observable_counter},
+                                aggregation_module => otel_aggregation_sum,
+                                attribute_keys => [<<"a">>]}]),
+
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
     Config;
@@ -319,6 +349,107 @@ init_per_testcase(simple_producer, Config) ->
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
     Config;
+init_per_testcase(wildcard_view, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers,
+                             [#{module => otel_metric_reader,
+                                config => #{exporter => {otel_metric_exporter_pid, self()},
+                                            default_temporality_mapping => default_temporality_mapping()}}]),
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{selector => #{instrument_name => '*'},
+                                aggregation_module => otel_aggregation_drop}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
+init_per_testcase(named_wildcard_view, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers,
+                             [#{module => otel_metric_reader,
+                                config => #{exporter => {otel_metric_exporter_pid, self()},
+                                            default_temporality_mapping => default_temporality_mapping()}}]),
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{name => view_a,
+                                selector => #{instrument_name => '*'},
+                                aggregation_module => otel_aggregation_drop}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
+init_per_testcase(sync_filtered_attributes, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
+
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{name => view_a,
+                                selector => #{instrument_name => a_counter},
+                                aggregation_module => otel_aggregation_sum,
+                                attribute_keys => [a, b]}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
+init_per_testcase(async_filtered_attributes, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
+
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{selector => #{instrument_name => a_observable_counter},
+                                aggregation_module => otel_aggregation_sum,
+                                attribute_keys => [a]}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
+init_per_testcase(advisory_params, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
+
+    %% explicit_bucket_boundaries from view have precedence
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{name => view,
+                                selector => #{instrument_name => b_histogram},
+                                aggregation_module => otel_aggregation_histogram_explicit,
+                                aggregation_options => #{explicit_bucket_boundaries => [10, 100]}}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
+init_per_testcase(histogram_aggregation_options, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
+
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{name => view,
+                                selector => #{instrument_name => histogram},
+                                aggregation_module => otel_aggregation_histogram_explicit,
+                                aggregation_options => #{explicit_bucket_boundaries => [10, 100]}}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
+init_per_testcase(async_attribute_removal, Config) ->
+    application:load(opentelemetry_experimental),
+    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
+
+    ok = application:set_env(opentelemetry_experimental, views,
+                             [#{selector => #{instrument_name => page_faults},
+                                aggregation_module => otel_aggregation_sum,
+                                attribute_keys => []}]),
+
+    {ok, _} = application:ensure_all_started(opentelemetry_experimental),
+
+    Config;
 init_per_testcase(_, Config) ->
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
@@ -326,7 +457,6 @@ init_per_testcase(_, Config) ->
                                                                                  default_temporality_mapping => default_temporality_mapping()}}]),
 
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
-
 
     Config.
 
@@ -567,6 +697,7 @@ provider_test(_Config) ->
     Ctx = otel_ctx:new(),
 
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 2, #{<<"c">> => <<"b">>})),
+    ?assertEqual(ok, otel_counter:add(Ctx, Counter, 5, #{<<"c">> => <<"b">>, <<"d">> => <<"e">>})),
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 3, #{<<"a">> => <<"b">>, <<"d">> => <<"e">>})),
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 4, #{<<"c">> => <<"b">>})),
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 5, #{<<"c">> => <<"b">>})),
@@ -589,61 +720,56 @@ provider_test(_Config) ->
 
     ok.
 
-view_creation_test(_Config) ->
-    DefaultMeter = otel_meter_default,
+%% view_creation_test(_Config) ->
+%%     DefaultMeter = otel_meter_default,
 
-    Meter = opentelemetry_experimental:get_meter(),
-    ?assertMatch({DefaultMeter, _}, Meter),
+%%     Meter = opentelemetry_experimental:get_meter(),
+%%     ?assertMatch({DefaultMeter, _}, Meter),
 
-    CounterName = a_counter,
-    CounterDesc = <<"counter description">>,
-    CounterUnit = kb,
+%%     CounterName = a_counter,
+%%     CounterDesc = <<"counter description">>,
+%%     CounterUnit = kb,
 
-    Counter = otel_counter:create(Meter, CounterName,
-                                  #{description => CounterDesc,
-                                    unit => CounterUnit}),
-    ?assertMatch(#instrument{meter = {DefaultMeter,_},
-                             module = DefaultMeter,
-                             name = CounterName,
-                             description = CounterDesc,
-                             kind = counter,
-                             unit = CounterUnit}, Counter),
+%%     Counter = otel_counter:create(Meter, CounterName,
+%%                                   #{description => CounterDesc,
+%%                                     unit => CounterUnit}),
+%%     ?assertMatch(#instrument{meter = {DefaultMeter,_},
+%%                              module = DefaultMeter,
+%%                              name = CounterName,
+%%                              description = CounterDesc,
+%%                              kind = counter,
+%%                              unit = CounterUnit}, Counter),
 
-    ?assert(otel_meter_server:add_view(view_a, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
+%%     ?assert(otel_meter_server:add_view(view_a, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
 
-    {ok, View} = otel_view:new(#{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum}),
-    %% view name becomes the instrument name
-    ?assertEqual(a_counter, View#view.name),
+%%     {ok, View} = otel_view:new(#{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum}),
+%%     %% view name becomes the instrument name
+%%     ?assertEqual(a_counter, View#view.name),
 
-    Matches = otel_view:match_instrument_to_views(Counter, [View], false, always_off),
-    ?assertMatch([_], Matches),
+%%     Matches = otel_view:match_instrument_to_views(Counter, [View], false, always_off),
+%%     ?assertMatch([_], Matches),
 
-    {ok, ViewUnitMatch} = otel_view:new(#{instrument_name => CounterName, instrument_unit => CounterUnit}, #{aggregation_module => otel_aggregation_sum}),
-    ?assertMatch([{#view{}, _}], otel_view:match_instrument_to_views(Counter, [ViewUnitMatch], false, always_off)),
+%%     {ok, ViewUnitMatch} = otel_view:new(#{instrument_name => CounterName, instrument_unit => CounterUnit}, #{aggregation_module => otel_aggregation_sum}),
+%%     ?assertMatch([{#view{}, _}], otel_view:match_instrument_to_views(Counter, [ViewUnitMatch], false, always_off)),
 
-    {ok, ViewUnitNotMatch} = otel_view:new(#{instrument_name => CounterName, instrument_unit => not_matching}, #{aggregation_module => otel_aggregation_sum}),
-    ?assertMatch([{undefined, _}], otel_view:match_instrument_to_views(Counter, [ViewUnitNotMatch], false, always_off)),
+%%     {ok, ViewUnitNotMatch} = otel_view:new(#{instrument_name => CounterName, instrument_unit => not_matching}, #{aggregation_module => otel_aggregation_sum}),
+%%     ?assertMatch([{undefined, _}], otel_view:match_instrument_to_views(Counter, [ViewUnitNotMatch], false, always_off)),
 
-    %% views require a unique name
-    ?assert(otel_meter_server:add_view(view_b, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
-    %% ?assertNot(otel_meter_server:add_view(view_b, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
+%%     %% views require a unique name
+%%     ?assert(otel_meter_server:add_view(view_b, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
+%%     %% ?assertNot(otel_meter_server:add_view(view_b, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
 
-    %% only one view that matches all instruments can be allowed
-    ?assert(otel_meter_server:add_view(view_c, #{}, #{aggregation_module => otel_aggregation_sum})),
-    %% ?assertNot(otel_meter_server:add_view(view_d, #{}, #{aggregation_module => otel_aggregation_sum})),
+%%     %% only one view that matches all instruments can be allowed
+%%     ?assert(otel_meter_server:add_view(view_c, #{}, #{aggregation_module => otel_aggregation_sum})),
+%%     %% ?assertNot(otel_meter_server:add_view(view_d, #{}, #{aggregation_module => otel_aggregation_sum})),
 
-    ?assert(otel_meter_server:add_view(#{instrument_name => b_counter}, #{aggregation_module => otel_aggregation_sum})),
-    ?assert(otel_meter_server:add_view(#{instrument_name => c_counter}, #{aggregation_module => otel_aggregation_sum})),
+%%     ?assert(otel_meter_server:add_view(#{instrument_name => b_counter}, #{aggregation_module => otel_aggregation_sum})),
+%%     ?assert(otel_meter_server:add_view(#{instrument_name => c_counter}, #{aggregation_module => otel_aggregation_sum})),
 
-    ok.
+%%     ok.
 
 wildcard_view(_Config) ->
     Meter = opentelemetry_experimental:get_meter(),
-
-    ViewCriteria = #{instrument_name => '*'},
-    ViewConfig = #{aggregation_module => otel_aggregation_drop},
-
-    ?assert(otel_meter_server:add_view(ViewCriteria, ViewConfig)),
 
     CounterName = a_counter,
     CounterDesc = <<"counter description">>,
@@ -660,12 +786,33 @@ wildcard_view(_Config) ->
     otel_meter_server:force_flush(),
 
     ?assertNotReceive(CounterName, CounterDesc, CounterUnit),
+    %% {ok, View} = otel_view:new(ViewCriteria, ViewConfig),
+    %% ?assertMatch([{#view{}, _}], otel_view:match_instrument_to_views(Counter, [View], false, always_off)),
 
-    {ok, View} = otel_view:new(ViewCriteria, ViewConfig),
-    ?assertMatch([{#view{}, _}], otel_view:match_instrument_to_views(Counter, [View], false, always_off)),
+    %% %% not possible to create wildcard views with a name
+    %% {error, named_wildcard_view} = otel_view:new(view_name, ViewCriteria, ViewConfig),
 
-    %% not possible to create wildcard views with a name
-    {error, named_wildcard_view} = otel_view:new(view_name, ViewCriteria, ViewConfig),
+    ok.
+
+named_wildcard_view(_Config) ->
+    Meter = opentelemetry_experimental:get_meter(),
+
+    CounterName = a_counter,
+    CounterDesc = <<"counter description">>,
+    CounterUnit = kb,
+
+    Counter = otel_counter:create(Meter, CounterName,
+                                  #{description => CounterDesc,
+                                    unit => CounterUnit}),
+
+    Ctx = otel_ctx:new(),
+
+    ?assertEqual(ok, otel_counter:add(Ctx, Counter, 1, #{})),
+
+    otel_meter_server:force_flush(),
+
+    %% view shouldn't be created because it has a name but is a wildcard
+    ?assertNotReceive(view_a, CounterDesc, CounterUnit),
 
     ok.
 
@@ -690,9 +837,6 @@ multiple_readers(_Config) ->
 
     CounterDesc = <<"counter description">>,
     CounterUnit = kb,
-
-    otel_meter_server:add_view(#{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum}),
-    otel_meter_server:add_view(#{instrument_name => b_counter}, #{}),
 
     CounterA = otel_meter:create_counter(Meter, a_counter,
                                          #{description => CounterDesc,
@@ -743,8 +887,6 @@ explicit_histograms(_Config) ->
 
     Ctx = otel_ctx:new(),
 
-    otel_meter_server:add_view(#{instrument_name => a_histogram}, #{}),
-
     ?assertEqual(ok, otel_histogram:record(Ctx, Histogram, 20, #{<<"c">> => <<"b">>})),
     ?assertEqual(ok, otel_histogram:record(Ctx, Histogram, 30, #{<<"a">> => <<"b">>, <<"d">> => <<"e">>})),
     ?assertEqual(ok, otel_histogram:record(Ctx, Histogram, 44, #{<<"c">> => <<"b">>})),
@@ -793,8 +935,6 @@ delta_explicit_histograms(_Config) ->
                              description = HistogramDesc,
                              kind = histogram,
                              unit = HistogramUnit}, Histogram),
-
-    otel_meter_server:add_view(#{instrument_name => a_histogram}, #{}),
 
 
     ?assertEqual(ok, otel_histogram:record(Ctx, Histogram, 20, #{<<"c">> => <<"b">>})),
@@ -862,7 +1002,6 @@ delta_counter(_Config) ->
                              kind = counter,
                              unit = CounterUnit}, Counter),
 
-    otel_meter_server:add_view(#{instrument_name => a_counter}, #{}),
 
     Ctx = otel_ctx:new(),
 
@@ -906,9 +1045,6 @@ cumulative_counter(_Config) ->
                              unit = CounterUnit}, Counter),
 
     Ctx = otel_ctx:new(),
-
-    otel_meter_server:add_view(#{instrument_name => a_counter},
-                               #{aggregation_module => otel_aggregation_sum}),
 
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 2, #{<<"c">> => <<"b">>})),
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 3, #{<<"a">> => <<"b">>, <<"d">> => <<"e">>})),
@@ -1061,9 +1197,6 @@ observable_counter(_Config) ->
     CounterDesc = <<"observable counter description">>,
     CounterUnit = kb,
 
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum})),
-
     Counter = otel_meter:create_observable_counter(Meter, CounterName,
                                                    fun(_Args) ->
                                                            MeasurementAttributes1 = #{<<"a">> => <<"b">>},
@@ -1105,8 +1238,6 @@ observable_updown_counter(_Config) ->
     CounterDesc = <<"observable updown counter description">>,
     CounterUnit = kb,
 
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName}, #{aggregation_module => otel_aggregation_sum})),
-
     Counter = otel_meter:create_observable_updowncounter(Meter, CounterName,
                                                          fun(_) ->
                                                                  MeasurementAttributes = #{<<"a">> => <<"b">>},
@@ -1139,8 +1270,6 @@ observable_gauge(_Config) ->
     CounterName = a_observable_gauge,
     CounterDesc = <<"observable gauge description">>,
     CounterUnit = kb,
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName}, #{aggregation_module => otel_aggregation_last_value})),
 
     Counter = otel_meter:create_observable_gauge(Meter, CounterName,
                                                  fun(_) ->
@@ -1178,8 +1307,6 @@ multi_instrument_callback(_Config) ->
 
     Unit = kb,
 
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName}, #{aggregation_module => otel_aggregation_sum})),
-
     Counter = otel_observable_counter:create(Meter, CounterName, #{description => CounterDesc, unit => Unit}),
     Gauge = otel_observable_gauge:create(Meter, GaugeName, #{description => GaugeDesc, unit => Unit}),
 
@@ -1203,10 +1330,6 @@ sync_filtered_attributes(_Config) ->
     CounterName = a_counter,
     CounterDesc = <<"counter description">>,
     CounterUnit = kb,
-
-    ?assert(otel_meter_server:add_view(view_a, #{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum,
-                                         attribute_keys => [a, b]})),
 
     Counter = otel_counter:create(Meter, CounterName,
                                   #{description => CounterDesc,
@@ -1242,10 +1365,6 @@ async_filtered_attributes(_Config) ->
     CounterDesc = <<"observable counter description">>,
     CounterUnit = kb,
 
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum,
-                                         attribute_keys => [a]})),
-
     Counter = otel_meter:create_observable_counter(Meter, CounterName,
                                                    fun(_Args) ->
                                                            MeasurementAttributes = #{a => b,
@@ -1279,8 +1398,6 @@ delta_observable_counter(_Config) ->
     CounterName = a_observable_counter,
     CounterDesc = <<"observable counter description">>,
     CounterUnit = kb,
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName}, #{aggregation_module => otel_aggregation_sum})),
 
     Counter = otel_meter:create_observable_counter(Meter, CounterName,
                                                    fun(_Args) ->
@@ -1320,9 +1437,6 @@ bad_observable_return(_Config) ->
     CounterDesc = <<"observable counter description">>,
     CounterDesc2 = <<"observable counter 2 description">>,
     CounterUnit = kb,
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName}, #{})),
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName2}, #{})),
 
     _Counter = otel_meter:create_observable_counter(Meter, CounterName,
                                                     fun(_Args) ->
@@ -1403,13 +1517,8 @@ advisory_params(_Config) ->
                          -- AttributeBuckets, AttributeBuckets)
     after
         5000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end,
-
-    % explicit_bucket_boundaries from view have precedence
-    ?assert(otel_meter_server:add_view(view, #{instrument_name => b_histogram}, #{
-        aggregation_module => otel_aggregation_histogram_explicit,
-        aggregation_options => #{explicit_bucket_boundaries => [10, 100]}})),
 
     HistogramB = otel_histogram:create(Meter, b_histogram,
                                   #{advisory_params => #{explicit_bucket_boundaries => [10, 20, 30]}}),
@@ -1435,7 +1544,7 @@ advisory_params(_Config) ->
                          -- AttributeBucketsB, AttributeBucketsB)
     after
         1000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end.
 
 histogram_aggregation_options(_Config) ->
@@ -1443,10 +1552,6 @@ histogram_aggregation_options(_Config) ->
 
     Meter = opentelemetry_experimental:get_meter(),
     ?assertMatch({DefaultMeter, _}, Meter),
-
-    ?assert(otel_meter_server:add_view(view, #{instrument_name => histogram}, #{
-        aggregation_module => otel_aggregation_histogram_explicit,
-        aggregation_options => #{explicit_bucket_boundaries => [10, 100]}})),
 
     Histogram = otel_histogram:create(Meter, histogram, #{}),
 
@@ -1472,7 +1577,7 @@ histogram_aggregation_options(_Config) ->
                          -- AttributeBucketsB, AttributeBucketsB)
     after
         1000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end.
 
 sync_delta_histogram(_Config) ->
@@ -1480,10 +1585,6 @@ sync_delta_histogram(_Config) ->
 
     Meter = opentelemetry_experimental:get_meter(),
     ?assertMatch({DefaultMeter, _}, Meter),
-
-    ?assert(otel_meter_server:add_view(http_req_view, #{instrument_name => http_requests}, #{
-                                                         aggregation_module => otel_aggregation_histogram_explicit,
-                                                         aggregation_options => #{explicit_bucket_boundaries => []}})),
 
     HttpReqHistogram = otel_histogram:create(Meter, http_requests, #{}),
 
@@ -1601,10 +1702,6 @@ sync_cumulative_histogram(_Config) ->
     Meter = opentelemetry_experimental:get_meter(),
     ?assertMatch({DefaultMeter, _}, Meter),
 
-    ?assert(otel_meter_server:add_view(http_req_view, #{instrument_name => http_requests}, #{
-                                                         aggregation_module => otel_aggregation_histogram_explicit,
-                                                         aggregation_options => #{explicit_bucket_boundaries => []}})),
-
     Ctx = otel_ctx:new(),
 
     HttpReqHistogram = otel_histogram:create(Meter, http_requests, #{}),
@@ -1632,7 +1729,7 @@ sync_cumulative_histogram(_Config) ->
                          -- AttributeBuckets, AttributeBuckets)
     after
         1000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end,
 
     otel_meter_server:force_flush(),
@@ -1675,7 +1772,7 @@ sync_cumulative_histogram(_Config) ->
                          -- AttributeBuckets1, AttributeBuckets1)
     after
         1000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end,
 
     ?assertEqual(ok, otel_histogram:record(Ctx, HttpReqHistogram, 100, #{verb => <<"GET">>,
@@ -1697,7 +1794,7 @@ sync_cumulative_histogram(_Config) ->
                          -- AttributeBuckets2, AttributeBuckets2)
     after
         1000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end,
 
     ?assertEqual(ok, otel_histogram:record(Ctx, HttpReqHistogram, 100, #{verb => <<"GET">>,
@@ -1722,7 +1819,7 @@ sync_cumulative_histogram(_Config) ->
                          -- AttributeBuckets3, AttributeBuckets3)
     after
         1000 ->
-            ct:fail(histogram_receive_timeout)
+            ct:fail({histogram_receive_timeout, ?LINE})
     end,
     ok.
 
@@ -1735,9 +1832,6 @@ async_cumulative_page_faults(_Config) ->
     CounterName = page_faults,
     CounterDesc = <<"number of page faults">>,
     CounterUnit = 1,
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum})),
 
     %% use an atomic to change the returned value of the observable callback on each call
     IntervalCounter = atomics:new(1, []),
@@ -1795,9 +1889,6 @@ async_delta_page_faults(_Config) ->
     CounterName = page_faults,
     CounterDesc = <<"number of page faults">>,
     CounterUnit = 1,
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum})),
 
     %% use an atomic to change the returned value of the observable callback on each call
     IntervalCounter = atomics:new(1, []),
@@ -1877,10 +1968,6 @@ async_attribute_removal(_Config) ->
     CounterDesc = <<"number of page faults">>,
     CounterUnit = 1,
 
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum,
-                                         attribute_keys => []})),
-
     %% use an atomic to change the returned value of the observable callback on each call
     IntervalCounter = atomics:new(1, []),
     Pid1001 = #{pid => 1001},
@@ -1941,10 +2028,6 @@ simple_fixed_exemplars(_Config) ->
     CBFGAttributes = #{<<"c">> => <<"b">>, <<"f">> => <<"g">>},
     FGAttributes = #{<<"f">> => <<"g">>},
     ABDEAttributes = #{<<"a">> => <<"b">>, <<"d">> => <<"e">>},
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum,
-                                         attribute_keys => [<<"c">>]})),
 
     Counter = otel_meter:create_counter(Meter, CounterName,
                                         #{description => CounterDesc,
@@ -2248,10 +2331,6 @@ observable_exemplars(_Config) ->
     CounterName = a_observable_counter,
     CounterDesc = <<"observable counter description">>,
     CounterUnit = kb,
-
-    ?assert(otel_meter_server:add_view(#{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum,
-                                         attribute_keys => [<<"a">>]})),
 
     Counter = otel_meter:create_observable_counter(Meter, CounterName,
                                                    fun(_Args) ->

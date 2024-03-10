@@ -43,9 +43,9 @@
          add_instrument/2,
          register_callback/3,
          register_callback/4,
-         add_view/2,
-         add_view/3,
-         add_view/4,
+         %% add_view/2,
+         %% add_view/3,
+         %% add_view/4,
          record/5,
          force_flush/0,
          force_flush/1,
@@ -109,7 +109,7 @@
 
 %% I think these have warnings because the new view function is ignored
 %% which is because it calls functions that use matchspecs in record defs
--dialyzer({nowarn_function, add_view_/9}).
+%% -dialyzer({nowarn_function, add_view_/9}).
 -dialyzer({nowarn_function, new_view/1}).
 
 -spec start_link(atom(), atom(), otel_resource:t(), otel_configuration:t()) -> {ok, pid()} | ignore | {error, term()}.
@@ -145,17 +145,17 @@ register_callback(Instruments, Callback, CallbackArgs) ->
 register_callback(Provider, Instruments, Callback, CallbackArgs) ->
     gen_server:call(Provider, {register_callback, Instruments, Callback, CallbackArgs}).
 
--spec add_view(otel_view:criteria(), otel_view:config()) -> boolean().
-add_view(Criteria, Config) ->
-    add_view(?GLOBAL_METER_PROVIDER_REG_NAME, undefined, Criteria, Config).
+%% -spec add_view(otel_view:criteria(), otel_view:config()) -> boolean().
+%% add_view(Criteria, Config) ->
+%%     add_view(?GLOBAL_METER_PROVIDER_REG_NAME, undefined, Criteria, Config).
 
--spec add_view(otel_view:name(), otel_view:criteria(), otel_view:config()) -> boolean().
-add_view(Name, Criteria, Config) ->
-    add_view(?GLOBAL_METER_PROVIDER_REG_NAME, Name, Criteria, Config).
+%% -spec add_view(otel_view:name(), otel_view:criteria(), otel_view:config()) -> boolean().
+%% add_view(Name, Criteria, Config) ->
+%%     add_view(?GLOBAL_METER_PROVIDER_REG_NAME, Name, Criteria, Config).
 
--spec add_view(atom(), otel_view:name(), otel_view:criteria(), otel_view:config()) -> boolean().
-add_view(Provider, Name, Criteria, Config) ->
-    gen_server:call(Provider, {add_view, Name, Criteria, Config}).
+%% -spec add_view(atom(), otel_view:name(), otel_view:criteria(), otel_view:config()) -> boolean().
+%% add_view(Provider, Name, Criteria, Config) ->
+%%     gen_server:call(Provider, {add_view, Name, Criteria, Config}).
 
 -spec record(otel_ctx:t(), #meter{}, otel_instrument:t() | otel_instrument:name(), number(), opentelemetry:attributes_map()) -> ok.
 record(Ctx, Meter, Name, Number, Attributes) when is_atom(Name) ->
@@ -266,12 +266,12 @@ handle_call({get_meter, Name, Vsn, SchemaUrl}, _From, State=#state{shared_meter=
 handle_call({get_meter, Scope}, _From, State=#state{shared_meter=Meter}) ->
     {reply, {Meter#meter.module,
              Meter#meter{instrumentation_scope=Scope}}, State};
-handle_call({add_view, Name, Criteria, Config}, _From, State=#state{views=Views,
-                                                                    instruments_tab=InstrumentsTab,
-                                                                    callbacks_tab=CallbacksTab,
-                                                                    streams_tab=StreamsTab,
-                                                                    readers=Readers}) ->
-    add_view_(Name, Criteria, Config, InstrumentsTab, CallbacksTab, StreamsTab, Readers, Views, State);
+%% handle_call({add_view, Name, Criteria, Config}, _From, State=#state{views=Views,
+%%                                                                     instruments_tab=InstrumentsTab,
+%%                                                                     callbacks_tab=CallbacksTab,
+%%                                                                     streams_tab=StreamsTab,
+%%                                                                     readers=Readers}) ->
+%%     add_view_(Name, Criteria, Config, InstrumentsTab, CallbacksTab, StreamsTab, Readers, Views, State);
 handle_call(force_flush, _From, State=#state{readers=Readers}) ->
     [otel_metric_reader:collect(Pid) || #reader{pid=Pid} <- Readers],
     {reply, ok, State}.
