@@ -25,6 +25,7 @@
          exemplars_tab/1,
 
          insert_instrument/4,
+         update_instrument/4,
          insert_stream/4,
          insert_callback/5,
          match_streams/3,
@@ -70,6 +71,11 @@ exemplars_tab(Name) ->
                        -> boolean().
 insert_instrument(InstrumentsTab, Meter, Name, Instrument) ->
     ets:insert_new(InstrumentsTab, {{Meter, Name}, Instrument}).
+
+-spec update_instrument(ets:table(), #meter{}, otel_instrument:name(), otel_instrument:t())
+                       -> boolean().
+update_instrument(InstrumentsTab, Meter, Name, Instrument) ->
+    ets:insert(InstrumentsTab, {{Meter, Name}, Instrument}).
 
 -spec insert_stream(ets:table(), #meter{}, atom(), #stream{}) -> true.
 insert_stream(StreamsTab, Meter, Name, Stream) ->

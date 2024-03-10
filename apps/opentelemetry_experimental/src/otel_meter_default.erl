@@ -42,8 +42,7 @@ create_instrument(Meter, Name, Kind, Opts) ->
     ValidatedOpts = validate_opts(Name, Kind, Opts),
     Instrument=#instrument{meter={_, #meter{provider=Provider}}} =
         otel_instrument:new(?MODULE, Meter, Kind, Name, ValidatedOpts),
-    _ = otel_meter_server:add_instrument(Provider, Instrument),
-    Instrument.
+    otel_meter_server:add_instrument(Provider, Instrument).
 
 lookup_instrument({_, Meter=#meter{instruments_tab=InstrumentsTab}}, Name) ->
     otel_metrics_tables:lookup_instrument(InstrumentsTab, Meter, Name).
@@ -54,8 +53,7 @@ create_instrument(Meter, Name, Kind, Callback, CallbackArgs, Opts) ->
     ValidatedOpts = validate_opts(Name, Kind, Opts),
     Instrument=#instrument{meter={_, #meter{provider=Provider}}} =
         otel_instrument:new(?MODULE, Meter, Kind, Name, Callback, CallbackArgs, ValidatedOpts),
-    _ = otel_meter_server:add_instrument(Provider, Instrument),
-    Instrument.
+    otel_meter_server:add_instrument(Provider, Instrument).
 
 register_callback({_, #meter{provider=Provider}}, Instruments, Callback, CallbackArgs) ->
     otel_meter_server:register_callback(Provider, Instruments, Callback, CallbackArgs);

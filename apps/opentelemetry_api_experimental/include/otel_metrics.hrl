@@ -9,7 +9,9 @@
                      temporality     :: otel_instrument:temporality(),
                      callback        :: otel_instrument:callback() | undefined,
                      callback_args   :: otel_instrument:callback_args() | undefined,
-                     advisory_params :: otel_instrument:advisory_params() | undefined}).
+                     advisory_params :: otel_instrument:advisory_params() | undefined,
+
+                     sdk_state       :: term()}).
 
 -define(TEMPORALITY_DELTA, temporality_delta).
 -define(TEMPORALITY_CUMULATIVE, temporality_cumulative).

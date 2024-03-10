@@ -160,8 +160,9 @@ add_view(Provider, Name, Criteria, Config) ->
 -spec record(otel_ctx:t(), #meter{}, otel_instrument:t() | otel_instrument:name(), number(), opentelemetry:attributes_map()) -> ok.
 record(Ctx, Meter, Name, Number, Attributes) when is_atom(Name) ->
     handle_measurement(Ctx, Meter, Name, Number, Attributes);
-record(Ctx, Meter, #instrument{name=Name}, Number, Attributes) ->
-    handle_measurement(Ctx, Meter, Name, Number, Attributes).
+record(Ctx, Meter, #instrument{name=Name,
+                               sdk_state=Streams}, Number, Attributes) ->
+    handle_measurement(Ctx, Meter, Name, Number, Attributes, Streams).
 
 -spec force_flush() -> ok.
 force_flush() ->
@@ -251,8 +252,8 @@ handle_call({add_instrument, Instrument}, _From, State=#state{readers=Readers,
                                                               streams_tab=StreamsTab,
                                                               exemplars_enabled=ExemplarsEnabled,
                                                               exemplar_filter=ExemplarFilter}) ->
-    _ = add_instrument_(InstrumentsTab, CallbacksTab, StreamsTab, Instrument, Views, Readers, ExemplarsEnabled, ExemplarFilter),
-    {reply, ok, State};
+    I = add_instrument_(InstrumentsTab, CallbacksTab, StreamsTab, Instrument#instrument{sdk_state=[]}, Views, Readers, ExemplarsEnabled, ExemplarFilter),
+    {reply, I, State};
 handle_call({register_callback, Instruments, Callback, CallbackArgs}, _From, State=#state{readers=Readers,
                                                                                           callbacks_tab=CallbacksTab}) ->
     _ = register_callback_(CallbacksTab, Instruments, Callback, CallbackArgs, Readers),
@@ -322,10 +323,15 @@ add_instrument_(InstrumentsTab, CallbacksTab, StreamsTab,
                                        name=Name}, Views, Readers, ExemplarsEnabled, ExemplarFilter) ->
     case otel_metrics_tables:insert_instrument(InstrumentsTab, Meter, Name, Instrument) of
         true ->
-            update_streams_(Instrument, CallbacksTab, StreamsTab, Views, Readers, ExemplarsEnabled, ExemplarFilter);
+            Instrument1 = update_streams_(Instrument, CallbacksTab, StreamsTab, Views, Readers, ExemplarsEnabled, ExemplarFilter),
+            otel_metrics_tables:update_instrument(InstrumentsTab, Meter, Name, Instrument),
+            Instrument1;
         false ->
             ?LOG_INFO("Instrument ~p already created. Ignoring attempt to create Instrument with the same name in the same Meter.", [Name]),
-            ok
+            Instrument0 = otel_metrics_tables:lookup_instrument(InstrumentsTab, Meter, Name),
+            Instrument1 = update_streams_(Instrument0, CallbacksTab, StreamsTab, Views, Readers, ExemplarsEnabled, ExemplarFilter),
+            otel_metrics_tables:update_instrument(InstrumentsTab, Meter, Name, Instrument),
+            Instrument1
     end.
 
 %% used when a new View is added and the Views must be re-matched with each Instrument
@@ -344,7 +350,7 @@ update_streams(InstrumentsTab, CallbacksTab, StreamsTab, Views, Readers, Exempla
 update_streams_(Instrument=#instrument{meter={_, Meter=#meter{}},
                                        name=Name}, CallbacksTab, StreamsTab, Views, Readers, ExemplarsEnabled, ExemplarFilter) ->
     ViewMatches = otel_view:match_instrument_to_views(Instrument, Views, ExemplarsEnabled, ExemplarFilter),
-    lists:foreach(fun(Reader=#reader{id=ReaderId}) ->
+    lists:foldl(fun(Reader=#reader{id=ReaderId}, InstrumentAcc=#instrument{sdk_state=Streams}) when is_list(Streams) ->
                           Matches = per_reader_aggregations(Reader, Instrument, ViewMatches),
                           [true = otel_metrics_tables:insert_stream(StreamsTab, Meter, Name, M) || M <- Matches],
                           case {Instrument#instrument.callback, Instrument#instrument.callback_args} of
@@ -352,8 +358,9 @@ update_streams_(Instrument=#instrument{meter={_, Meter=#meter{}},
                                   ok;
                               {Callback, CallbackArgs} ->
                                   otel_metrics_tables:insert_callback(CallbacksTab, ReaderId, Callback, CallbackArgs, Instrument)
-                          end
-                  end, Readers).
+                          end,
+                        InstrumentAcc#instrument{sdk_state=Streams++Matches}
+                  end, Instrument#instrument{sdk_state=[]}, Readers).
 
 %% Match the Instrument to views and then store a per-Reader aggregation for the View
 register_callback_(CallbacksTab, Instruments, Callback, CallbackArgs, Readers) ->
@@ -383,6 +390,9 @@ metric_reader(ReaderId, ReaderPid, DefaultAggregationMapping, Temporality) ->
 
 handle_measurement(Ctx, Meter=#meter{streams_tab=StreamsTab}, Name, Number, Attributes) ->
     Streams = otel_metrics_tables:match_streams(StreamsTab, Meter, Name),
+    handle_measurement(Ctx, Meter, Name, Number, Attributes, Streams).
+
+handle_measurement(Ctx, Meter, _Name, Number, Attributes, Streams) ->
     update_aggregations(Ctx, Meter, Number, Attributes, Streams).
 
 update_aggregations(Ctx, Meter, Value, Attributes, Streams) ->

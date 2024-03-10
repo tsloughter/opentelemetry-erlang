@@ -691,6 +691,9 @@ multiple_readers(_Config) ->
     CounterDesc = <<"counter description">>,
     CounterUnit = kb,
 
+    otel_meter_server:add_view(#{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum}),
+    otel_meter_server:add_view(#{instrument_name => b_counter}, #{}),
+
     CounterA = otel_meter:create_counter(Meter, a_counter,
                                          #{description => CounterDesc,
                                            unit => CounterUnit}),
@@ -699,9 +702,6 @@ multiple_readers(_Config) ->
                                            unit => CounterUnit}),
 
     Ctx = otel_ctx:new(),
-
-    otel_meter_server:add_view(#{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum}),
-    otel_meter_server:add_view(#{instrument_name => b_counter}, #{}),
 
     ?assertEqual(ok, otel_counter:add(Ctx, CounterA, 2, #{<<"c">> => <<"b">>})),
     ?assertEqual(ok, otel_counter:add(Ctx, CounterA, 3, #{<<"a">> => <<"b">>, <<"d">> => <<"e">>})),
@@ -981,12 +981,12 @@ kill_reader(_Config) ->
 
     %% This will create an ignored duplicate Counter since the Instruments table
     %% is owned by the `otel_metrics_server' process
-    Counter = otel_meter:create_counter(Meter, CounterName,
+    Counter1 = otel_meter:create_counter(Meter, CounterName,
                                         #{description => CounterDesc,
                                           unit => CounterUnit}),
-
-    ?assertEqual(ok, otel_counter:add(Ctx, Counter, 4, #{<<"c">> => <<"b">>})),
-    ?assertEqual(ok, otel_counter:add(Ctx, Counter, 5, #{<<"c">> => <<"b">>})),
+    ?assertEqual(Counter, Counter1),
+    ?assertEqual(ok, otel_counter:add(Ctx, Counter1, 4, #{<<"c">> => <<"b">>})),
+    ?assertEqual(ok, otel_counter:add(Ctx, Counter1, 5, #{<<"c">> => <<"b">>})),
 
     otel_meter_server:force_flush(),
 
@@ -1033,15 +1033,15 @@ kill_server(_Config) ->
 
     %% TODO: Agh! need to supervise ETS tables so meter servers can crash and not then
     %% lose all existing Instrument/View matches
-    ACounter = otel_meter:create_counter(Meter, ACounterName,
+    _ACounter1 = otel_meter:create_counter(Meter, ACounterName,
                                          #{description => CounterDesc,
                                            unit => CounterUnit}),
-    Counter = otel_meter:create_counter(Meter, CounterName,
+    Counter1 = otel_meter:create_counter(Meter, CounterName,
                                         #{description => CounterDesc,
                                           unit => CounterUnit}),
 
-    ?assertEqual(ok, otel_counter:add(Ctx, Counter, 4, #{<<"c">> => <<"b">>})),
-    ?assertEqual(ok, otel_counter:add(Ctx, Counter, 5, #{<<"c">> => <<"b">>})),
+    ?assertEqual(ok, otel_counter:add(Ctx, Counter1, 4, #{<<"c">> => <<"b">>})),
+    ?assertEqual(ok, otel_counter:add(Ctx, Counter1, 5, #{<<"c">> => <<"b">>})),
 
     otel_meter_server:force_flush(),
 
@@ -1204,6 +1204,10 @@ sync_filtered_attributes(_Config) ->
     CounterDesc = <<"counter description">>,
     CounterUnit = kb,
 
+    ?assert(otel_meter_server:add_view(view_a, #{instrument_name => CounterName},
+                                       #{aggregation_module => otel_aggregation_sum,
+                                         attribute_keys => [a, b]})),
+
     Counter = otel_counter:create(Meter, CounterName,
                                   #{description => CounterDesc,
                                     unit => CounterUnit}),
@@ -1216,18 +1220,12 @@ sync_filtered_attributes(_Config) ->
 
     Ctx = otel_ctx:new(),
 
-    ?assert(otel_meter_server:add_view(view_a, #{instrument_name => CounterName},
-                                       #{aggregation_module => otel_aggregation_sum,
-                                         attribute_keys => [a, b]})),
-
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 2, #{a => 1, b => 2, c => 3})),
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 5, #{a => 1, b => 2})),
     ?assertEqual(ok, ?counter_add(CounterName, 5, #{a => 1, b => 2, c => 3})),
 
     otel_meter_server:force_flush(),
 
-    ?assertSumReceive(CounterName, CounterDesc, kb,
-                      [{7, #{a => 1, b => 2, c => 3}}, {5, #{a => 1, b => 2}}]),
     ?assertSumReceive(view_a, CounterDesc, kb,
                       [{12, #{a => 1, b => 2}}]),
 
@@ -2187,7 +2185,8 @@ trace_based_exemplars(_Config) ->
                              name = CounterName,
                              description = CounterDesc,
                              kind = counter,
-                             unit = CounterUnit}, Counter),
+                             unit = CounterUnit,
+                             sdk_state=[_]}, Counter),
 
     Ctx = otel_ctx:get_current(),
     ?assertEqual(ok, otel_counter:add(Ctx, Counter, 2, CBAttributes)),
