@@ -1,0 +1,66 @@
+{
+  "api": {
+    "workingDirectory": "apps/opentelemetry_api",
+    "name": "OpenTelemetry API",
+    "packageName": "opentelemetry_api",
+    "tagPrefix": "opentelemetry-api-v",
+    "buildTool": "mix",
+    "language": "elixir-erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+  "sdk": {
+    "workingDirectory": "apps/opentelemetry_sdk",
+    "name": "OpenTelemetry SDK",
+    "packageName": "opentelemetry",
+    "tagPrefix": "opentelemetry-sdk-v",
+    "buildTool": "rebar3",
+    "language": "erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+  "exporter": {
+    "workingDirectory": "apps/opentelemetry_exporter",
+    "name": "OpenTelemetry OTLP Exporter",
+    "packageName": "opentelemetry_exporter",
+    "tagPrefix": "opentelemetry-exporter-v",
+    "buildTool": "rebar3",
+    "language": "erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+  "semantic-conventions": {
+    "workingDirectory": "apps/opentelemetry_semantic_conventions",
+    "name": "OpenTelemetry OTLP Exporter",
+    "packageName": "opentelemetry_semantic_conventions",
+    "tagPrefix": "opentelemetry-semantic-conventions-v",
+    "buildTool": "mix",
+    "language": "elixir-erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+  "zipkin": {
+    "workingDirectory": "apps/opentelemetry_zipkin",
+    "name": "OpenTelemetry Zipkin",
+    "packageName": "opentelemetry_zipkin",
+    "tagPrefix": "opentelemetry-zipkin-v",
+    "buildTool": "rebar3",
+    "language": "erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+  "experimental-api": {
+    "workingDirectory": "apps/opentelemetry_api_experimental",
+    "name": "OpenTelemetr Experimental API",
+    "packageName": "opentelemetry_api_experimental",
+    "tagPrefix": "opentelemetry-api-experimental-v",
+    "buildTool": "mix",
+    "language": "elixir-erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+  "experimental-sdk": {
+    "workingDirectory": "apps/opentelemetry_sdk_experimental",
+    "name": "OpenTelemetry SDK",
+    "packageName": "opentelemetry_experimental",
+    "tagPrefix": "opentelemetry-experimental-v",
+    "buildTool": "rebar3",
+    "language": "erlang",
+    "authorizedUsers": ["bryannaegele", "tsloughter"]
+  },
+
+}
