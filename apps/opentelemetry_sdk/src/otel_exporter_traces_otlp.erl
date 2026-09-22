@@ -17,7 +17,7 @@
 %% environment, the OS environment or directly through a map of options
 %% passed when setting up the exporter in the batch processor.
 %%
-%% `opentelemetry_exporter' application environment options are:
+%% `opentelemetry_sdk' application environment options are:
 %%
 %% <ul>
 %%   <li>
@@ -218,8 +218,8 @@ merge_with_environment(Opts) ->
     %% are loaded first, before any are started, but in case this is run not by a
     %% release we load the application here to ensure the application environment is
     %% available to read configuration from.
-    application:load(opentelemetry_exporter),
-    AppEnv = application:get_all_env(opentelemetry_exporter),
+    application:load(opentelemetry_sdk),
+    AppEnv = application:get_all_env(opentelemetry_sdk),
     otel_exporter_otlp:merge_with_environment(config_mapping(),
                                               AppEnv,
                                               Opts,

@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Introduce the `opentelemetry_sdk` application for SDK components and the OTLP exporter.
+
 ### Changed
-- Keep only automatic SDK startup and per-application tracer creation in the `opentelemetry` application.
+- Move SDK components out of the `opentelemetry` OTP release integration application.
+- Move the OTLP exporter out of the retired `opentelemetry_exporter` application.
 - Use erl_error:format_exception for exception.stacktrace by @arseniycodes in [#988](https://github.com/open-telemetry/opentelemetry-erlang/pull/988)
 
 ## New Contributors
