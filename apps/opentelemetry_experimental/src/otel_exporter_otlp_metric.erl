@@ -13,39 +13,39 @@
 %% limitations under the License.
 %%
 %% @doc This is the module providing the OpenTelemetry protocol for
-%% exporting traces. It can be configured through its application
+%% exporting metrics. It can be configured through its application
 %% environment, the OS environment or directly through a map of options
 %% passed when setting up the exporter in the batch processor.
 %%
-%% `opentelemetry_sdk' application environment options are:
+%% `opentelemetry_experimental' application environment options are:
 %%
 %% <ul>
 %%   <li>
-%%     `otlp_endpoint': The URL to send traces, metrics and logs to, for traces the
-%%     path `v1/traces' is appended to the path in the URL.
+%%     `otlp_endpoint': The URL to send traces, metrics and logs to, for metrics the
+%%     path `v1/metrics' is appended to the path in the URL.
 %%   </li>
 %%   <li>
-%%     `otlp_traces_endpoint': URL to send only traces to. This takes precedence
-%%     for exporting traces and the path of the URL is kept as is, no suffix is
+%%     `otlp_metrics_endpoint': URL to send only metrics to. This takes precedence
+%%     for exporting metrics and the path of the URL is kept as is, no suffix is
 %%     appended.
 %%   </li>
 %%   <li>
 %%     `otlp_headers': List of additional headers (`[{unicode:chardata(), unicode:chardata()}]') to add to export requests.
 %%   </li>
 %%   <li>
-%%     `otlp_traces_headers': Additional headers (`[{unicode:chardata(), unicode:chardata()}]') to add to only trace export requests.
+%%     `otlp_metrics_headers': Additional headers (`[{unicode:chardata(), unicode:chardata()}]') to add to only metric export requests.
 %%   </li>
 %%   <li>
 %%     `otlp_protocol': The transport protocol, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.
 %%   </li>
 %%   <li>
-%%     `otlp_traces_protocol': The transport protocol to use for exporting traces, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'
+%%     `otlp_metrics_protocol': The transport protocol to use for exporting traces, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'
 %%   </li>
 %%   <li>
 %%     `otlp_compression': Compression type to use, supported values: `gzip'. Defaults to no compression.
 %%   </li>
 %%   <li>
-%%     `otlp_traces_compression': Compression type to use for exporting traces, supported values: `gzip'. Defaults to no compression.
+%%     `otlp_metrics_compression': Compression type to use for exporting metrics, supported values: `gzip'. Defaults to no compression.
 %%   </li>
 %% </ul>
 %%
@@ -53,20 +53,20 @@
 %% configuration values:
 %%
 %% <ul>
-%%   <li>`OTEL_EXPORTER_OTLP_ENDPOINT': The URL to send traces and metrics to, for traces the path `v1/traces' is appended to the path in the URL.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT': URL to send only traces to. This takes precedence for exporting traces and the path of the URL is kept as is, no suffix is appended.</li>
+%%   <li>`OTEL_EXPORTER_OTLP_ENDPOINT': The URL to send traces, metrics and logs to, for metrics the path `v1/metrics' is appended to the path in the URL.</li>
+%%   <li>`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT': URL to send only metrics to. This takes precedence for exporting metrics and the path of the URL is kept as is, no suffix is appended.</li>
 %%   <li>`OTEL_EXPORTER_OTLP_HEADERS': List of additional headers to add to export requests.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_TRACES_HEADERS': Additional headers to add to only trace export requests.</li>
+%%   <li>`OTEL_EXPORTER_OTLP_METRICS_HEADERS': Additional headers to add to only trace export requests.</li>
 %%   <li>`OTEL_EXPORTER_OTLP_PROTOCOL': The transport protocol to use, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL': The transport protocol to use for exporting traces, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.</li>
+%%   <li>`OTEL_EXPORTER_OTLP_METRICS_PROTOCOL': The transport protocol to use for exporting metrics, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.</li>
 %%   <li>`OTEL_EXPORTER_OTLP_COMPRESSION': Compression to use, supported value: gzip. Defaults to no compression.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_TRACES_COMPRESSION': Compression to use when exporting traces, supported value: gzip. Defaults to no compression.</li>
+%%   <li>`OTEL_EXPORTER_OTLP_METRICS_COMPRESSION': Compression to use when exporting metrics, supported value: gzip. Defaults to no compression.</li>
 %% </ul>
 %%
 %% You can also set these configuration values in the map passed to the
 %% opentelemetry processor configuration.
 %% <ul>
-%%   <li>`endpoints': A list of endpoints to send traces to. Can take one of the forms described below. By default, exporter sends data to `http://localhost:4318'.</li>
+%%   <li>`endpoints': A list of endpoints to send metrics to. Can take one of the forms described below. By default, exporter sends data to `http://localhost:4318'.</li>
 %%   <li>`headers': List of additional headers to add to export requests.</li>
 %%   <li>`protocol': The transport protocol to use, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.</li>
 %%   <li>`compression': Compression to use, supported value: `gzip'. Defaults to no compression.</li>
@@ -90,22 +90,22 @@
 %%   <li> As a 4 element tuple in format `{Scheme, Host, Port, SSLOptions}'.</li>
 %% </ul>
 %%
-%% While using `http_protobuf' protocol, currently only the first endpoint in that list is used to export traces, the rest is effectively ignored. `grpc' supports multiple endpoints.
+%% While using `http_protobuf' protocol, currently only the first endpoint in that list is used to export metrics, the rest is effectively ignored. `grpc' supports multiple endpoints.
 %%
 %% @end
 %%%-------------------------------------------------------------------------
--module(otel_exporter_traces_otlp).
+-module(otel_exporter_otlp_metric).
 
--behaviour(otel_exporter_span).
+-behaviour(otel_exporter_metric).
 
 -export([init/1,
-         export/2,
+         export/3,
          shutdown/1,
          merge_with_environment/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
--define(DEFAULT_TRACES_PATH, "v1/traces").
+-define(DEFAULT_METRICS_PATH, "v1/metrics").
 
 -record(state, {channel :: term(),
                 httpc_profile :: atom() | undefined,
@@ -117,8 +117,7 @@
                 endpoints :: [otel_exporter_otlp:endpoint_map()]}).
 
 %% @doc Initialize the exporter based on the provided configuration.
--spec init(otel_exporter_otlp:opts() |
-           otel_configuration_sdk:otlp_exporter_options()) -> {ok, #state{}}.
+-spec init(otel_exporter_otlp:opts()) -> {ok, #state{}}.
 init(Opts) ->
     Opts1 = merge_with_environment(Opts),
     case otel_exporter_otlp:init(Opts1) of
@@ -159,17 +158,17 @@ init(Opts) ->
     end.
 
 %% @doc Export OTLP protocol telemery data to the configured endpoints.
-export(_Batch, #state{protocol=http_json}) ->
+export(_Metrics, _Resource, #state{protocol=http_json}) ->
     {error, unimplemented};
-export(Batch, #state{protocol=http_protobuf,
-                     httpc_profile=HttpcProfile,
-                     headers=Headers,
-                     compression=Compression,
-                     endpoints=[#{scheme := Scheme,
-                                  host := Host,
-                                  path := Path,
-                                  port := Port,
-                                  ssl_options := SSLOptions} | _]}) ->
+export(Metrics, Resource, #state{protocol=http_protobuf,
+                                 httpc_profile=HttpcProfile,
+                                 headers=Headers,
+                                 compression=Compression,
+                                 endpoints=[#{scheme := Scheme,
+                                              host := Host,
+                                              path := Path,
+                                              port := Port,
+                                              ssl_options := SSLOptions} | _]}) ->
     case uri_string:normalize(#{scheme => Scheme,
                                 host => Host,
                                 port => Port,
@@ -179,26 +178,26 @@ export(Batch, #state{protocol=http_protobuf,
                       [Type, Error]),
             error;
         Address ->
-            case otel_otlp_traces:to_proto(Batch) of
+            case otel_otlp_metrics:to_proto(Metrics, Resource) of
                 empty ->
                     ok;
                 ProtoMap ->
-                    Body = opentelemetry_exporter_trace_service_pb:encode_msg(ProtoMap,
-                                                                              export_trace_service_request),
+                    Body = opentelemetry_exporter_metrics_service_pb:encode_msg(ProtoMap,
+                                                                                export_metrics_service_request),
                     otel_exporter_otlp:export_http(Address, Headers, Body, Compression, SSLOptions, HttpcProfile)
             end
     end;
-export(Batch, #state{protocol=grpc,
-                     grpc_metadata=Metadata,
-                     channel=Channel}) ->
-    case otel_otlp_traces:to_proto(Batch) of
+export(Metrics, Resource, #state{protocol=grpc,
+                                 grpc_metadata=Metadata,
+                                 channel=Channel}) ->
+    case otel_otlp_metrics:to_proto(Metrics, Resource) of
         empty ->
             ok;
         Request ->
             GrpcCtx = ctx:new(),
-            otel_exporter_otlp:export_grpc(GrpcCtx, opentelemetry_trace_service, Metadata, Request, Channel)
+            otel_exporter_otlp:export_grpc(GrpcCtx, opentelemetry_metrics_service, Metadata, Request, Channel)
     end;
-export(_Batch, _State) ->
+export(_Metrics, _Resource, _State) ->
     {error, unimplemented}.
 
 %% @doc Shutdown the exporter.
@@ -210,9 +209,6 @@ shutdown(#state{channel_pid=Pid}) ->
 
 %%
 
--spec merge_with_environment(otel_exporter_otlp:opts() |
-                             otel_configuration_sdk:otlp_exporter_options()) ->
-          otel_exporter_otlp:opts().
 merge_with_environment(Opts) ->
     %% exporters are initialized by calling their `init/1' function from `opentelemetry'.
     %% since this application depends on `opentelemetry' it will not be started during
@@ -220,38 +216,38 @@ merge_with_environment(Opts) ->
     %% are loaded first, before any are started, but in case this is run not by a
     %% release we load the application here to ensure the application environment is
     %% available to read configuration from.
-    application:load(opentelemetry_sdk),
-    AppEnv = application:get_all_env(opentelemetry_sdk),
+    application:load(opentelemetry_experimental),
+    AppEnv = application:get_all_env(opentelemetry_experimental),
     otel_exporter_otlp:merge_with_environment(config_mapping(),
                                               AppEnv,
                                               Opts,
-                                              otlp_traces_endpoint,
-                                              otlp_traces_headers,
-                                              otlp_traces_protocol,
-                                              otlp_traces_compression,
-                                              ?DEFAULT_TRACES_PATH).
+                                              otlp_metrics_endpoint,
+                                              otlp_metrics_headers,
+                                              otlp_metrics_protocol,
+                                              otlp_metrics_compression,
+                                              ?DEFAULT_METRICS_PATH).
 
 config_mapping() ->
     [
      %% endpoint the Otel protocol exporter should connect to
      {"OTEL_EXPORTER_OTLP_ENDPOINT", otlp_endpoint, url},
-     {"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlp_traces_endpoint, url},
+     {"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", otlp_metrics_endpoint, url},
 
      %% headers to include in requests the exporter makes over the Otel protocol
      {"OTEL_EXPORTER_OTLP_HEADERS", otlp_headers, key_value_list},
-     {"OTEL_EXPORTER_OTLP_TRACES_HEADERS", otlp_traces_headers, key_value_list},
+     {"OTEL_EXPORTER_OTLP_METRICS_HEADERS", otlp_metrics_headers, key_value_list},
 
      {"OTEL_EXPORTER_OTLP_PROTOCOL", otlp_protocol, otlp_protocol},
-     {"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", otlp_traces_protocol, otlp_protocol},
+     {"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", exporter_otlp_metrics_protocol, otlp_protocol},
 
      {"OTEL_EXPORTER_OTLP_COMPRESSION", otlp_compression, existing_atom},
-     {"OTEL_EXPORTER_OTLP_TRACES_COMPRESSION", otlp_traces_compression, existing_atom},
+     {"OTEL_EXPORTER_OTLP_METRICS_COMPRESSION", otlp_metrics_compression, existing_atom},
 
      %% {"OTEL_EXPORTER_OTLP_CERTIFICATE", otlp_certificate, path},
-     %% {"OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE", otlp_traces_certificate, path},
+     %% {"OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE", otlp_metrics_certificate, path},
 
      %% {"OTEL_EXPORTER_OTLP_TIMEOUT", otlp_timeout, integer},
-     %% {"OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", otlp_traces_timeout, integer}
+     %% {"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", otlp_metrics_timeout, integer}
 
      {"OTEL_EXPORTER_SSL_OPTIONS", ssl_options, key_value_list}
     ].

@@ -1,4 +1,4 @@
--module(opentelemetry_exporter_SUITE).
+-module(otel_exporter_otlp_span_SUITE).
 
 -compile(export_all).
 
@@ -63,49 +63,49 @@ configuration(_Config) ->
     try
         ?assertMatch(#{endpoints := [#{host := "localhost", path := "", port := 4317,
                                        scheme := "http"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{protocol => grpc})),
+                     otel_exporter_otlp_span:merge_with_environment(#{protocol => grpc})),
 
         ?assertMatch(#{endpoints := [#{host := "localhost", path := "/v1/traces", port := 4318,
                                        scheme := "http"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
 
         ?assertMatch(#{endpoints :=
                            [#{scheme := "http", host := "localhost",
                               port := 9090, path := "/v1/traces", ssl_options := []}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, []}], ssl_options => [{cacertfile, "/etc/ssl/cert.pem"}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, []}], ssl_options => [{cacertfile, "/etc/ssl/cert.pem"}]})),
 
         ?assertMatch(#{endpoints :=
                            [#{scheme := "http", host := "localhost",
                               port := 9090, path := "/v1/traces", ssl_options := [{cacertfile, "/etc/ssl/cert.pem"}]}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{cacertfile, "/etc/ssl/cert.pem"}]}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{cacertfile, "/etc/ssl/cert.pem"}]}]})),
 
         ?assertMatch(#{endpoints :=
                            [#{scheme := "http", host := "localhost",
                               port := 9090, path := "/v1/traces", ssl_options := [{verify, verify_none}]}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{verify, verify_none}]}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{verify, verify_none}]}]})),
 
         application:set_env(opentelemetry_sdk, ssl_options, [{cacertfile, "/etc/ssl/other.pem"}]),
         ?assertMatch(#{endpoints := [#{host := "localhost", path := "/v1/traces", port := 4318,
                                        scheme := "http"}], ssl_options := [{cacertfile, "/etc/ssl/other.pem"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
 
         ?assertMatch(#{endpoints :=
                            [#{scheme := "http", host := "localhost",
                               port := 9090, path := "/v1/traces", ssl_options := []}],
                        ssl_options := [{cacertfile, "/etc/ssl/other.pem"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, []}], ssl_options => [{cacertfile, "/etc/ssl/cert.pem"}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, []}], ssl_options => [{cacertfile, "/etc/ssl/cert.pem"}]})),
 
         ?assertMatch(#{endpoints :=
                            [#{scheme := "http", host := "localhost",
                               port := 9090, path := "/v1/traces", ssl_options := [{cacertfile, "/etc/ssl/cert.pem"}]}],
                        ssl_options := [{cacertfile, "/etc/ssl/other.pem"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{cacertfile, "/etc/ssl/cert.pem"}]}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{cacertfile, "/etc/ssl/cert.pem"}]}]})),
 
         ?assertMatch(#{endpoints :=
                            [#{scheme := "http", host := "localhost",
                               port := 9090, path := "/v1/traces", ssl_options := [{verify, verify_none}]}],
                        ssl_options := [{cacertfile, "/etc/ssl/other.pem"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{verify, verify_none}]}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, [{verify, verify_none}]}]})),
 
         ?assertMatch([#{scheme := "http", host := "localhost", port := 4318, path := "/v1/traces", ssl_options := [{cacertfile, "/etc/ssl/cert.pem"}]}],
                      otel_exporter_otlp:endpoints(
@@ -140,27 +140,27 @@ configuration(_Config) ->
         application:set_env(opentelemetry_sdk, otlp_endpoint, "http://localhost:5353"),
         ?assertMatch(#{endpoints := [#{host := "localhost", path := "/v1/traces", port := 5353,
                                        scheme := "http"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
 
         application:set_env(opentelemetry_sdk, otlp_endpoint, "http://localhost:5353"),
         ?assertMatch(#{endpoints := [#{host := "localhost", path := "/v1/traces", port := 5353,
                                        scheme := "http"}]},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => [{http, "localhost", 9090, []}]})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => [{http, "localhost", 9090, []}]})),
 
         application:set_env(opentelemetry_sdk, otlp_endpoint, "\"http://withextraquotes.com:5353\""),
-        ?assertMatch(#{endpoints := []}, otel_exporter_traces_otlp:merge_with_environment(#{})),
+        ?assertMatch(#{endpoints := []}, otel_exporter_otlp_span:merge_with_environment(#{})),
 
         %% test that the os env and app env give the same configuration
         application:set_env(opentelemetry_sdk, otlp_endpoint, <<"http://localhost:4317">>),
         application:set_env(opentelemetry_sdk, otlp_protocol, grpc),
-        A = otel_exporter_traces_otlp:merge_with_environment(#{}),
+        A = otel_exporter_otlp_span:merge_with_environment(#{}),
         ?assertMatch([#{scheme := "http", host := "localhost", port := 4317}],
                      otel_exporter_otlp:endpoints(maps:get(endpoints, A), [])),
 
         application:unset_env(opentelemetry_sdk, otlp_protocol),
         os:putenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
         os:putenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
-        B = otel_exporter_traces_otlp:merge_with_environment(#{}),
+        B = otel_exporter_otlp_span:merge_with_environment(#{}),
         ?assertEqual(otel_exporter_otlp:endpoints(maps:get(endpoints, A), []),
                      otel_exporter_otlp:endpoints(maps:get(endpoints, B), [])),
 
@@ -176,7 +176,7 @@ configuration(_Config) ->
                        compression => undefined,
                        protocol => http_protobuf,
                        ssl_options => undefined},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => []})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => []})),
 
         os:putenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4343/internal"),
         os:putenv("OTEL_EXPORTER_OTLP_HEADERS", "key1=value1"),
@@ -187,7 +187,7 @@ configuration(_Config) ->
                        compression => undefined,
                        protocol => http_protobuf,
                        ssl_options => undefined},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => []})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => []})),
 
         %% test all supported protocols
         application:unset_env(opentelemetry_sdk, otlp_protocol),
@@ -195,7 +195,7 @@ configuration(_Config) ->
         %% regression test for issue #788
         os:putenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "grpc"),
         ?assertMatch(#{protocol := grpc},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
         os:unsetenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"),
 
         %% the specification defines the value as "http/protobuf"
@@ -203,13 +203,13 @@ configuration(_Config) ->
         application:unset_env(opentelemetry_sdk, otlp_protocol),
         os:putenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
         ?assertMatch(#{protocol := http_protobuf},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
 
         %% backwards compatible with earlier stable version that uses "http_protobuf"
         application:unset_env(opentelemetry_sdk, otlp_protocol),
         os:putenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http_protobuf"),
         ?assertMatch(#{protocol := http_protobuf},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
 
 
         os:putenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:5353/internal"),
@@ -223,11 +223,11 @@ configuration(_Config) ->
                        compression => undefined,
                        protocol => http_protobuf,
                        ssl_options => undefined},
-                     otel_exporter_traces_otlp:merge_with_environment(#{endpoints => []})),
+                     otel_exporter_otlp_span:merge_with_environment(#{endpoints => []})),
 
         os:putenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
         ?assertMatch(#{protocol := grpc},
-                     otel_exporter_traces_otlp:merge_with_environment(#{})),
+                     otel_exporter_otlp_span:merge_with_environment(#{})),
 
         ok
     after
@@ -461,12 +461,12 @@ verify_export(Config) ->
                http_protobuf ->
                    4318
            end,
-    {ok, State} = opentelemetry_exporter:init(#{protocol => Protocol,
+    {ok, State} = otel_exporter_otlp_span:init(#{protocol => Protocol,
                                                 compression => Compression,
                                                 endpoints => [{http, "localhost", Port, []}]}),
 
     %% regression test. adding the httpc profile meant that init'ing more than once would crash
-    {ok, _State} = opentelemetry_exporter:init(#{protocol => Protocol,
+    {ok, _State} = otel_exporter_otlp_span:init(#{protocol => Protocol,
                                                 compression => Compression,
                                                 endpoints => [{http, "localhost", Port, []}]}),
 
@@ -477,7 +477,7 @@ verify_export(Config) ->
     %% than 1 gprc test case.
     timer:sleep(500),
     EmptyBatch = otel_batch_span:new(Tid, otel_resource:create([])),
-    ?assertMatch(ok, otel_exporter_span:export({opentelemetry_exporter, State}, EmptyBatch)),
+    ?assertMatch(ok, otel_exporter_span:export({otel_exporter_otlp_span, State}, EmptyBatch)),
 
     TraceId = otel_id_generator:generate_trace_id(),
     SpanId = otel_id_generator:generate_span_id(),
@@ -540,7 +540,7 @@ verify_export(Config) ->
                  otel_otlp_traces:to_proto_by_instrumentation_scope(Batch)),
     ?assertEqual(otel_attributes:new([{'service.name',<<"my-test-service">>},
                                       {'service.version',<<"98da75ea6d38724743bf42b45565049238d86b3f">>}], 128, 255), otel_resource:attributes(Resource)),
-    ?assertMatch(ok, otel_exporter_span:export({opentelemetry_exporter, State}, Batch)),
+    ?assertMatch(ok, otel_exporter_span:export({otel_exporter_otlp_span, State}, Batch)),
 
     ok.
 
@@ -549,7 +549,7 @@ user_agent(Config) ->
     Compression = ?config(compression, Config),
     Port = 4318,
 
-    {ok, State} = opentelemetry_exporter:init(#{protocol => Protocol,
+    {ok, State} = otel_exporter_otlp_span:init(#{protocol => Protocol,
                                                 compression => Compression,
                                                 endpoints => [{http, "localhost", Port, []}]}),
 
@@ -583,6 +583,6 @@ user_agent(Config) ->
         {ok, {{"1.1", 200, ""}, [], <<>>}}
     end),
     Batch = otel_batch_span:new(Tid, Resource),
-    ?assertMatch(ok, otel_exporter_span:export({opentelemetry_exporter, State}, Batch)),
+    ?assertMatch(ok, otel_exporter_span:export({otel_exporter_otlp_span, State}, Batch)),
     ?assert(meck:validate(httpc)),
     meck:unload(httpc).
