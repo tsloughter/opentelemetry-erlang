@@ -17,24 +17,25 @@
 %%%-------------------------------------------------------------------------
 -module(otel_otlp_traces).
 
--export([to_proto/2]).
+-export([to_proto/1]).
 
 %% for testing
 -ifdef(TEST).
 -export([to_proto_by_instrumentation_scope/1,
-         to_proto/1,
+         to_proto_span/1,
          build_span_flags/2]).
 -endif.
 
 -include_lib("opentelemetry_api/include/opentelemetry.hrl").
 -include("otel_span.hrl").
 
--spec to_proto(ets:table(), otel_resource:t()) -> opentelemetry_exporter_trace_service_pb:export_trace_service_request() | empty.
-to_proto(Tab, Resource) ->
-    case to_proto_by_instrumentation_scope(Tab) of
+-spec to_proto(otel_batch_span:t()) -> opentelemetry_exporter_trace_service_pb:export_trace_service_request() | empty.
+to_proto(Batch) ->
+    case to_proto_by_instrumentation_scope(Batch) of
         [] ->
             empty;
         InstrumentationScopeSpans ->
+            Resource = otel_batch_span:resource(Batch),
             Attributes = otel_resource:attributes(Resource),
             ResourceSpans = #{resource => #{attributes => otel_otlp_common:to_attributes(Attributes),
                                             dropped_attributes_count => otel_attributes:dropped(Attributes)},
@@ -47,39 +48,37 @@ to_proto(Tab, Resource) ->
             end
     end.
 
-to_proto_by_instrumentation_scope(Tab) ->
-    Key = ets:first(Tab),
-    to_proto_by_instrumentation_scope(Tab, Key).
-
-to_proto_by_instrumentation_scope(_Tab, '$end_of_table') ->
-    [];
-to_proto_by_instrumentation_scope(Tab, InstrumentationScope) ->
-    InstrumentationScopeSpans = lists:foldl(fun(Span, Acc) ->
-                                                      [to_proto(Span) | Acc]
-                                              end, [], ets:lookup(Tab, InstrumentationScope)),
-    InstrumentationScopeSpansProto = otel_otlp_common:to_instrumentation_scope_proto(InstrumentationScope),
-    [InstrumentationScopeSpansProto#{spans => InstrumentationScopeSpans}
-    | to_proto_by_instrumentation_scope(Tab, ets:next(Tab, InstrumentationScope))].
+to_proto_by_instrumentation_scope(Batch) ->
+    otel_batch_span:foldl_scopes(
+      fun(InstrumentationScope, Spans, Acc) ->
+              InstrumentationScopeSpans =
+                  lists:foldl(fun(Span, SpanAcc) ->
+                                      [to_proto_span(Span) | SpanAcc]
+                              end, [], Spans),
+              InstrumentationScopeSpansProto =
+                  otel_otlp_common:to_instrumentation_scope_proto(InstrumentationScope),
+              [InstrumentationScopeSpansProto#{spans => InstrumentationScopeSpans} | Acc]
+      end, [], Batch).
 
 %% TODO: figure out why this type spec fails
-%% -spec to_proto(#span{}) -> opentelemetry_exporter_trace_service_pb:span().
+%% -spec to_proto_span(#span{}) -> opentelemetry_exporter_trace_service_pb:span().
 
-to_proto(#span{trace_id=TraceId,
-               span_id=SpanId,
-               tracestate=TraceState,
-               parent_span_id=MaybeParentSpanId,
-               parent_span_is_remote=ParentIsRemote,
-               name=Name,
-               kind=Kind,
-               start_time=StartTime,
-               end_time=EndTime,
-               attributes=Attributes,
-               events=TimedEvents,
-               links=Links,
-               status=Status,
-               trace_flags=TraceFlags,
-               is_recording=_IsRecording}) when is_integer(TraceId),
-                                                is_integer(SpanId) ->
+to_proto_span(#span{trace_id=TraceId,
+                    span_id=SpanId,
+                    tracestate=TraceState,
+                    parent_span_id=MaybeParentSpanId,
+                    parent_span_is_remote=ParentIsRemote,
+                    name=Name,
+                    kind=Kind,
+                    start_time=StartTime,
+                    end_time=EndTime,
+                    attributes=Attributes,
+                    events=TimedEvents,
+                    links=Links,
+                    status=Status,
+                    trace_flags=TraceFlags,
+                    is_recording=_IsRecording}) when is_integer(TraceId),
+                                                     is_integer(SpanId) ->
     ParentSpanId = case MaybeParentSpanId of _ when is_integer(MaybeParentSpanId) -> <<MaybeParentSpanId:64>>; _ -> <<>> end,
     #{name                     => otel_otlp_common:to_binary(Name),
       trace_id                 => <<TraceId:128>>,

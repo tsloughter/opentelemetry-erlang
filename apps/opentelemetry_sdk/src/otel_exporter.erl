@@ -27,18 +27,18 @@
          shutdown/1,
          report_cb/1]).
 
-%% Kept only for backwards compatibility. Look at `otel_exporter_traces', `otel_exporter_metrics'
+%% Kept only for backwards compatibility. Look at `otel_exporter_span', `otel_exporter_metrics'
 %% and `otel_exporter_logs' instead.
 -callback init(term()) -> {ok, term()} | ignore.
 
-%% Kept only for backwards compatibility. Look at `otel_exporter_traces', `otel_exporter_metrics'
+%% Kept only for backwards compatibility. Look at `otel_exporter_span', `otel_exporter_metrics'
 %% and `otel_exporter_logs' instead.
 -callback export(traces | logs | metrics, ets:tab(), otel_resource:t(), term()) -> ok |
                                                                                    success |
                                                                                    failed_not_retryable |
                                                                                    failed_retryable.
 
-%% Kept only for backwards compatibility. Look at `otel_exporter_traces', `otel_exporter_metrics'
+%% Kept only for backwards compatibility. Look at `otel_exporter_span', `otel_exporter_metrics'
 %% and `otel_exporter_logs' instead.failed_retryable.
 -callback shutdown(term()) -> ok.
 

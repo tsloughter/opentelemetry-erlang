@@ -96,7 +96,10 @@
 %%%-------------------------------------------------------------------------
 -module(opentelemetry_exporter).
 
+-behaviour(otel_exporter_span).
+
 -export([init/1,
+         export/2,
          export/3,
          export/4,
          shutdown/1]).
@@ -105,12 +108,15 @@
 init(Opts) ->
     otel_exporter_traces_otlp:init(Opts).
 
+export(Batch, State) ->
+    otel_exporter_traces_otlp:export(Batch, State).
+
 export(Tab, Resource, State) ->
-    otel_exporter_traces_otlp:export(Tab, Resource, State).
+    export(otel_batch_span:new(Tab, Resource), State).
 
 %% @doc Export OTLP protocol telemery data to the configured endpoints.
 export(traces, Tab, Resource, State) ->
-    otel_exporter_traces_otlp:export(Tab, Resource, State);
+    export(otel_batch_span:new(Tab, Resource), State);
 export(metrics, Metrics, Resource, State) ->
     otel_exporter_metrics_otlp:export(Metrics, Resource, State);
 export(logs, Logs, Resource, State) ->

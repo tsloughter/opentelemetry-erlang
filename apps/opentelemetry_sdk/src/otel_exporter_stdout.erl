@@ -17,20 +17,20 @@
 %%%-----------------------------------------------------------------------
 -module(otel_exporter_stdout).
 
--behaviour(otel_exporter_traces).
+-behaviour(otel_exporter_span).
 
 -export([init/1,
-         export/3,
+         export/2,
          shutdown/1]).
 
 init(_) ->
     {ok, []}.
 
-export(SpansTid, _Resource, _) ->
+export(Batch, _) ->
     io:format("*SPANS FOR DEBUG*~n"),
-    ets:foldl(fun(Span, _Acc) ->
-                      io:format("~p~n", [Span])
-              end, [], SpansTid),
+    otel_batch_span:foldl(fun(Span, _Acc) ->
+                                  io:format("~p~n", [Span])
+                          end, [], Batch),
     ok.
 
 shutdown(_) ->

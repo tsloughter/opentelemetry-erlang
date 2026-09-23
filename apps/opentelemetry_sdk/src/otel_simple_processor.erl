@@ -170,7 +170,7 @@ exporting(EventType, Event, Data) ->
 
 handle_event_(_, internal, init_exporter, Data=#data{exporter=undefined,
                                                      exporter_config=ExporterConfig}) ->
-    Exporter = otel_exporter:init(ExporterConfig),
+    Exporter = otel_exporter_span:init(ExporterConfig),
     {keep_state, Data#data{exporter=Exporter}};
 handle_event_(_, _, _, _) ->
     keep_state_and_data.
@@ -181,7 +181,7 @@ terminate(_, _, #data{exporter=Exporter}) ->
     %% mirroring `otel_batch_processor:terminate/3'. See #868 — linked
     %% grpcbox channels crash on a missing `gproc' ETS table when they
     %% terminate after the `grpcbox' application is already gone.
-    _ = otel_exporter:shutdown(Exporter),
+    _ = otel_exporter_span:shutdown(Exporter),
     ok.
 
 %%
@@ -243,7 +243,8 @@ export(Exporter, Resource, SpansTid) ->
     %% don't let a exporter exception crash us
     %% and return true if exporter failed
     try
-        otel_exporter_traces:export(Exporter, SpansTid, Resource) =:= failed_not_retryable
+        Batch = otel_batch_span:new(SpansTid, Resource),
+        otel_exporter_span:export(Exporter, Batch) =:= failed_not_retryable
     catch
         Kind:Reason:StackTrace ->
             ?LOG_INFO(#{source => exporter,

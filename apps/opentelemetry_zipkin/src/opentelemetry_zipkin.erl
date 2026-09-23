@@ -1,7 +1,9 @@
 -module(opentelemetry_zipkin).
 
+-behaviour(otel_exporter_span).
+
 -export([init/1,
-         export/4,
+         export/2,
          shutdown/1]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -21,21 +23,23 @@ init(Opts) ->
     {ok, #state{address=Address,
                 endpoint=LocalEndpoint}}.
 
-export(traces, Tab, Resource, #state{address=Address,
-                                     endpoint=LocalEndpoint}) ->
+export(Batch, #state{address=Address,
+                     endpoint=LocalEndpoint}) ->
+    Resource = otel_batch_span:resource(Batch),
     Attributes = otel_resource:attributes(Resource),
     LocalEndpoint1 = local_endpoint_from_resource(Attributes, LocalEndpoint),
-    ZSpans = ets:foldl(fun(Span, Acc) ->
-                               try zipkin_span(Span, LocalEndpoint1) of
-                                   ZipkinSpan ->
-                                       [ZipkinSpan | Acc]
-                               catch
-                                   C:T:S ->
-                                       %% failed to encode
-                                       ?LOG_DEBUG("failed to encode span to Zipkin format ~p:~p ~p", [C, T, S]),
-                                       Acc
-                               end
-                       end, [], Tab),
+    ZSpans = otel_batch_span:foldl(
+               fun(Span, Acc) ->
+                       try zipkin_span(Span, LocalEndpoint1) of
+                           ZipkinSpan ->
+                               [ZipkinSpan | Acc]
+                       catch
+                           C:T:S ->
+                               %% failed to encode
+                               ?LOG_DEBUG("failed to encode span to Zipkin format ~p:~p ~p", [C, T, S]),
+                               Acc
+                       end
+               end, [], Batch),
 
     case ZSpans of
         [] ->
@@ -54,11 +58,7 @@ export(traces, Tab, Resource, #state{address=Address,
                     ?LOG_INFO("client error exporting spans ~p", [Reason]),
                     error
             end
-    end;
-export(Type, _Tab, _Resource, _State) ->
-    ?LOG_INFO("Unable to export data of type ~p with the Zipkin exporter. "
-              "Zipkin only supports traces", [Type]),
-    error.
+    end.
 
 
 shutdown(_) ->

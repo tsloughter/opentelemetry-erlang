@@ -289,6 +289,7 @@ ets_instrumentation_info(_Config) ->
                                                                        version = <<"0.0.1">>}},
     true = ets:insert(Tid, ChildSpan),
 
+    Batch = otel_batch_span:new(Tid, otel_resource:create([])),
     ?assertMatch([#{scope :=
                         #{name := <<"tracer-1">>,version := <<"0.0.1">>},
                     spans :=
@@ -296,7 +297,7 @@ ets_instrumentation_info(_Config) ->
                   #{scope :=
                         #{name := <<"tracer-2">>,version := <<"0.0.1">>},
                     spans :=
-                        [_]}], lists:sort(otel_otlp_traces:to_proto_by_instrumentation_scope(Tid))),
+                        [_]}], lists:sort(otel_otlp_traces:to_proto_by_instrumentation_scope(Batch))),
 
     ok.
 
@@ -331,7 +332,7 @@ span_round_trip(_Config) ->
               instrumentation_scope = #instrumentation_scope{name = <<"tracer-1">>,
                                                              version = <<"0.0.1">>}},
 
-    PbSpan = otel_otlp_traces:to_proto(Span),
+    PbSpan = otel_otlp_traces:to_proto_span(Span),
     Proto = opentelemetry_exporter_trace_service_pb:encode_msg(PbSpan, span),
 
     PbSpan1 = maps:filter(fun(_, V) -> V =/= undefined end, PbSpan),
@@ -371,7 +372,7 @@ span_flags(_Config) ->
                            links = otel_links:new([], 128, 128, 128),
                            tracestate = otel_tracestate:new([])},
     
-    PbSpanLocal = otel_otlp_traces:to_proto(LocalParentSpan),
+    PbSpanLocal = otel_otlp_traces:to_proto_span(LocalParentSpan),
     ?assertEqual(16#101, maps:get(flags, PbSpanLocal)), %% 0x101 - local parent with sampled flag
 
     %% Test span with remote parent
@@ -390,7 +391,7 @@ span_flags(_Config) ->
                             links = otel_links:new([], 128, 128, 128),
                             tracestate = otel_tracestate:new([])},
     
-    PbSpanRemote = otel_otlp_traces:to_proto(RemoteParentSpan),
+    PbSpanRemote = otel_otlp_traces:to_proto_span(RemoteParentSpan),
     ?assertEqual(16#301, maps:get(flags, PbSpanRemote)), %% 0x301 - remote parent with sampled flag
 
     %% Test span with no parent
@@ -409,7 +410,7 @@ span_flags(_Config) ->
                         links = otel_links:new([], 128, 128, 128),
                         tracestate = otel_tracestate:new([])},
     
-    PbSpanNoParent = otel_otlp_traces:to_proto(NoParentSpan),
+    PbSpanNoParent = otel_otlp_traces:to_proto_span(NoParentSpan),
     ?assertEqual(16#101, maps:get(flags, PbSpanNoParent)), %% 0x101 - no parent with sampled flag
 
     ok.
@@ -475,7 +476,8 @@ verify_export(Config) ->
     %% {error, no_endpoints} when attempt to export when we have more
     %% than 1 gprc test case.
     timer:sleep(500),
-    ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, otel_resource:create([]), State)),
+    EmptyBatch = otel_batch_span:new(Tid, otel_resource:create([])),
+    ?assertMatch(ok, otel_exporter_span:export({opentelemetry_exporter, State}, EmptyBatch)),
 
     TraceId = otel_id_generator:generate_trace_id(),
     SpanId = otel_id_generator:generate_span_id(),
@@ -532,12 +534,13 @@ verify_export(Config) ->
                                                        ], 128, 128)},
     true = ets:insert(Tid, ChildSpan),
 
-    ?assertMatch([#{spans := [_, _]}],
-                 otel_otlp_traces:to_proto_by_instrumentation_scope(Tid)),
     Resource = otel_resource_env_var:get_resource([]),
+    Batch = otel_batch_span:new(Tid, Resource),
+    ?assertMatch([#{spans := [_, _]}],
+                 otel_otlp_traces:to_proto_by_instrumentation_scope(Batch)),
     ?assertEqual(otel_attributes:new([{'service.name',<<"my-test-service">>},
                                       {'service.version',<<"98da75ea6d38724743bf42b45565049238d86b3f">>}], 128, 255), otel_resource:attributes(Resource)),
-    ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
+    ?assertMatch(ok, otel_exporter_span:export({opentelemetry_exporter, State}, Batch)),
 
     ok.
 
@@ -579,6 +582,7 @@ user_agent(Config) ->
         ?assertEqual(ExpectedUserAgent, UserAgent),
         {ok, {{"1.1", 200, ""}, [], <<>>}}
     end),
-    ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
+    Batch = otel_batch_span:new(Tid, Resource),
+    ?assertMatch(ok, otel_exporter_span:export({opentelemetry_exporter, State}, Batch)),
     ?assert(meck:validate(httpc)),
     meck:unload(httpc).

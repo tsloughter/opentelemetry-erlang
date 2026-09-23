@@ -310,14 +310,14 @@ terminate(_Reason, _State, #data{exporter=Exporter,
     %% terminations race with the shutdown of the `grpcbox' application
     %% itself and crash with "the table identifier does not refer to an
     %% existing ETS table". See open-telemetry/opentelemetry-erlang#868.
-    _ = otel_exporter:shutdown(Exporter),
+    _ = otel_exporter_span:shutdown(Exporter),
 
     ok.
 
 %%
 
 init_exporter(RegName, ExporterConfig) ->
-    case otel_exporter:init(ExporterConfig) of
+    case otel_exporter_span:init(ExporterConfig) of
         Exporter when Exporter =/= undefined andalso Exporter =/= none ->
             enable(RegName),
             Exporter;
@@ -434,7 +434,8 @@ export(Exporter, Resource, SpansTid) ->
     %% don't let a exporter exception crash us
     %% and return true if exporter failed
     try
-        otel_exporter_traces:export(Exporter, SpansTid, Resource) =:= failed_not_retryable
+        Batch = otel_batch_span:new(SpansTid, Resource),
+        otel_exporter_span:export(Exporter, Batch) =:= failed_not_retryable
     catch
         Kind:Reason:StackTrace ->
             ?LOG_INFO(#{source => exporter,

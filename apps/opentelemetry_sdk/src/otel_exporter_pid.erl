@@ -17,22 +17,23 @@
 %%%-----------------------------------------------------------------------
 -module(otel_exporter_pid).
 
--behaviour(otel_exporter_traces).
+-behaviour(otel_exporter_span).
 
 -export([init/1,
-         export/3,
+         export/2,
          shutdown/1]).
 
 init(Pid) ->
     {ok, Pid}.
 
-export(SpansTid, Resource, #{pid := Pid, include_resource := true}) ->
+export(Batch, #{pid := Pid, include_resource := true}) ->
+    Resource = otel_batch_span:resource(Batch),
     Pid ! {resource, Resource},
-    export(SpansTid, Resource, Pid);
-export(SpansTid, _Resource, Pid) ->
-    ets:foldl(fun(Span, _Acc) ->
-                      Pid ! {span, Span}
-              end, [], SpansTid),
+    export(Batch, Pid);
+export(Batch, Pid) ->
+    otel_batch_span:foldl(fun(Span, _Acc) ->
+                                  Pid ! {span, Span}
+                          end, [], Batch),
     ok.
 
 shutdown(_) ->

@@ -12,34 +12,39 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%
-%% @doc
+%% @doc Behaviour and lifecycle helpers for span exporters.
 %% @end
 %%%-----------------------------------------------------------------------
--module(otel_exporter_traces).
+-module(otel_exporter_span).
 
 -export([init/1,
-         export/3,
+         export/2,
          shutdown/1]).
 
-%% Do any initialization of the exporter here and return configuration
-%% that will be passed along with a list of spans to the `export' function.
+-type result() :: ok |
+                  success |
+                  failed_not_retryable |
+                  failed_retryable |
+                  error |
+                  {error, term()}.
+
+-export_type([result/0]).
+
+%% Do any initialization of the exporter here and return state that will be
+%% passed along with each span batch to `export/2'.
 -callback init(term()) -> {ok, term()} | ignore.
 
-%% This function is called when the configured interval expires with any
-%% spans that have been collected so far and the configuration returned in `init'.
-%% Do whatever needs to be done to export each span here, the caller will block
-%% until it returns.
--callback export(ets:tab(), otel_resource:t(), term()) -> ok |
-                                                          success |
-                                                          failed_not_retryable |
-                                                          failed_retryable.
+%% Export a batch of finished spans. Calls for one exporter instance are
+%% serialized by the built-in span processors.
+-callback export(otel_batch_span:t(), term()) -> result().
+
 -callback shutdown(term()) -> ok.
 
 init(Opts) ->
     otel_exporter:init(Opts).
 
-export({ExporterModule, Config}, SpansTid, Resource) ->
-    ExporterModule:export(SpansTid, Resource, Config).
+export({ExporterModule, State}, Batch) ->
+    ExporterModule:export(Batch, State).
 
 shutdown(Exporter) ->
     otel_exporter:shutdown(Exporter).
