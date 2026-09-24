@@ -126,16 +126,15 @@ being redesigned.
 
 ## OTLP exporter
 
-The `opentelemetry_exporter` module is part of this application and supports
+The `otel_exporter_otlp_span` module is part of this application and supports
 OTLP over gRPC or protobuf over HTTP. Declarative configuration should select
 an `otlp_grpc` or `otlp_http` exporter inside a span processor, as shown above.
 
-For direct exporter use, the `opentelemetry_sdk` application environment also
-accepts the legacy OTLP keys `otlp_endpoint`, `otlp_traces_endpoint`,
-`otlp_headers`, `otlp_traces_headers`, `otlp_protocol`,
-`otlp_traces_protocol`, `otlp_compression`, `otlp_traces_compression`, and
-`ssl_options`. The corresponding `OTEL_EXPORTER_OTLP_*` environment variables
-take precedence.
+`otel_configuration_sdk` resolves defaults and the standard
+`OTEL_EXPORTER_OTLP_*` environment variables before initializing the exporter.
+The exporter itself consumes only the normalized `endpoints`, `headers`,
+`protocol`, `compression`, and `ssl_options` values; it does not read
+application or OS environment settings.
 
 ### Erlang components
 

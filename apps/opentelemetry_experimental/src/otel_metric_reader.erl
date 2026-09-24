@@ -86,8 +86,9 @@ inc_checkpoint_generation(ReaderId) ->
     atomics:add_get(GenerationRef, 1, 1) - 1.
 
 init([ReaderId, ProviderSup, Config]) ->
-    ExporterModuleConfig = maps:get(exporter, Config, undefined),
-    Exporter = otel_exporter_metrics:init(ExporterModuleConfig),
+    ExporterModuleConfig = normalize_exporter(
+                             maps:get(exporter, Config, undefined)),
+    Exporter = otel_exporter_metric:init(ExporterModuleConfig),
 
     DefaultAggregationMapping = maps:get(default_aggregation_mapping, Config, otel_aggregation:default_mapping()),
     Temporality = maps:get(default_temporality_mapping, Config, otel_aggregation:default_temporality_mapping()),
@@ -122,6 +123,12 @@ init([ReaderId, ProviderSup, Config]) ->
                 generation_ref=GenerationRef,
                 producers=[],
                 config=Config}, {continue, register_with_server}}.
+
+normalize_exporter({otel_exporter_otlp_metric, Options}) when is_map(Options) ->
+    {otel_exporter_otlp_metric,
+     otel_configuration_sdk:otlp_exporter_options(metric, Options)};
+normalize_exporter(Exporter) ->
+    Exporter.
 
 handle_continue(register_with_server, State=#state{provider_sup=ProviderSup,
                                                    id=ReaderId,
@@ -182,7 +189,7 @@ collect_(State=#state{id=ReaderId,
                      }) ->
     Metrics = run_collection(CallbacksTab, StreamsTab, MetricsTab, ExemplarsTab, ReaderId, Producers),
 
-    otel_exporter_metrics:export(Exporter, Metrics, Resource),
+    otel_exporter_metric:export(Exporter, Metrics, Resource),
 
     State;
 collect_(State=#state{id=ReaderId,
@@ -202,7 +209,7 @@ collect_(State=#state{id=ReaderId,
 
     Metrics = run_collection(CallbacksTab, StreamsTab, MetricsTab, ExemplarsTab, ReaderId, Producers),
 
-    otel_exporter_metrics:export(Exporter, Metrics, Resource),
+    otel_exporter_metric:export(Exporter, Metrics, Resource),
 
     State#state{tref=NewTRef}.
 

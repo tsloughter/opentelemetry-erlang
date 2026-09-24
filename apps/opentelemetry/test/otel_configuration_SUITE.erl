@@ -131,13 +131,13 @@ init_per_testcase(none_metrics_exporter, Config) ->
 
     [{os_vars, Vars} | Config];
 init_per_testcase(deny_list, Config) ->
-    Vars = [{"OTEL_DENY_LIST", "opentelemetry_exporter,opentelemetry,nonexisting_atom"}],
+    Vars = [{"OTEL_DENY_LIST", "otel_exporter_otlp_span,opentelemetry,nonexisting_atom"}],
 
     setup_env(Vars),
 
     [{os_vars, Vars} | Config];
 init_per_testcase(resource_detectors, Config) ->
-    Vars = [{"OTEL_RESOURCE_DETECTORS", "opentelemetry_exporter,opentelemetry,nonexisting_atom"}],
+    Vars = [{"OTEL_RESOURCE_DETECTORS", "otel_exporter_otlp_span,opentelemetry,nonexisting_atom"}],
 
     setup_env(Vars),
 
@@ -281,7 +281,7 @@ propagators_b3multi(_Config) ->
     ok.
 
 otlp_exporter(_Config) ->
-    ?assertMatch({opentelemetry_exporter, #{}},
+    ?assertMatch({otel_exporter_otlp_span, #{}},
                  maps:get(traces_exporter, otel_configuration:merge_with_os([]))),
 
     ok.
@@ -313,7 +313,7 @@ app_env_exporter(_Config) ->
                  maps:get(traces_exporter,
                           otel_configuration:merge_with_os([{traces_exporter, {someother_exporter, #{}}}]))),
 
-    ?assertMatch({opentelemetry_exporter, #{}},
+    ?assertMatch({otel_exporter_otlp_span, #{}},
                  maps:get(traces_exporter,
                           otel_configuration:merge_with_os([{traces_exporter, otlp}]))),
 
@@ -328,7 +328,7 @@ app_env_exporter(_Config) ->
     ok.
 
 otlp_metrics_exporter(_Config) ->
-    ?assertMatch({opentelemetry_exporter, #{}},
+    ?assertMatch({otel_exporter_otlp_metric, #{}},
                  maps:get(metrics_exporter, otel_configuration:merge_with_os([]))),
 
     ok.
@@ -341,14 +341,14 @@ none_metrics_exporter(_Config) ->
 
 deny_list(_Config) ->
     %% nonexisting_atom in the OTEL_DENY_LIST os var is dropped bc it isn't an existing atom
-    ?assertMatch(#{deny_list := [opentelemetry_exporter,opentelemetry]},
+    ?assertMatch(#{deny_list := [otel_exporter_otlp_span,opentelemetry]},
                  otel_configuration:merge_with_os([])),
 
     ok.
 
 resource_detectors(_Config) ->
     %% nonexisting_atom in the OTEL_RESOURCE_DETECTORS os var is dropped bc it isn't an existing atom
-    ?assertMatch(#{resource_detectors := [opentelemetry_exporter,opentelemetry]},
+    ?assertMatch(#{resource_detectors := [otel_exporter_otlp_span,opentelemetry]},
                  otel_configuration:merge_with_os([])),
 
     ok.
@@ -401,7 +401,7 @@ span_processors(_Config) ->
     ?assertMatch(#{processors := [{otel_simple_processor, #{}}]},
                  otel_configuration:merge_with_os([{span_processor, simple}])),
 
-    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {opentelemetry_exporter,#{}},
+    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {otel_exporter_otlp_span,#{}},
                                                            exporting_timeout_ms := 2,
                                                            max_queue_size := 1,
                                                            scheduled_delay_ms := 15000}}]},
@@ -414,26 +414,26 @@ span_processors(_Config) ->
                  otel_configuration:merge_with_os([{span_processor, batch},
                                                    {traces_exporter, none}])),
 
-    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {opentelemetry_exporter,#{}},
+    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {otel_exporter_otlp_span,#{}},
                                                            exporting_timeout_ms := 30000,
                                                            max_queue_size := 2048,
                                                            scheduled_delay_ms := 5000}}]},
                  otel_configuration:merge_with_os([{span_processor, batch}])),
 
     %% processor-level config takes precedence over top-level bsp_ settings
-    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {opentelemetry_exporter,
+    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {otel_exporter_otlp_span,
                                                                         #{endpoints := ["https://example.com"]}},
                                                            exporting_timeout_ms := 3,
                                                            max_queue_size := 4,
                                                            scheduled_delay_ms := 15000}}]},
-                 otel_configuration:merge_with_os([{processors, [{otel_batch_processor, #{exporter => {opentelemetry_exporter,#{endpoints => ["https://example.com"]}},
+                 otel_configuration:merge_with_os([{processors, [{otel_batch_processor, #{exporter => {otel_exporter_otlp_span,#{endpoints => ["https://example.com"]}},
                                                                                           scheduled_delay_ms => 15000,
                                                                                           max_queue_size => 4,
                                                                                           exporting_timeout_ms => 3}}]},
                                                    {bsp_exporting_timeout_ms, 2},
                                                    {bsp_max_queue_size, 1}])),
 
-    ?assertMatch(#{processors := [{otel_simple_processor, #{exporter := {opentelemetry_exporter,#{}},
+    ?assertMatch(#{processors := [{otel_simple_processor, #{exporter := {otel_exporter_otlp_span,#{}},
                                                             exporting_timeout_ms := 2}}]},
                  otel_configuration:merge_with_os([{span_processor, simple},
                                                    {ssp_exporting_timeout_ms, 2}])),
@@ -505,7 +505,7 @@ processor_exporter_not_overridden(_Config) ->
                                                                   #{exporter => {simple_exp, #{}}}}]}])),
 
     %% default config fully populated when using span_processor shorthand
-    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {opentelemetry_exporter, #{}},
+    ?assertMatch(#{processors := [{otel_batch_processor, #{exporter := {otel_exporter_otlp_span, #{}},
                                                            exporting_timeout_ms := 30000,
                                                            max_queue_size := 2048,
                                                            scheduled_delay_ms := 5000}}]},

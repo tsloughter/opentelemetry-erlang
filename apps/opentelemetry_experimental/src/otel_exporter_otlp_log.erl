@@ -12,59 +12,13 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%
-%% @doc This is the module providing the OpenTelemetry protocol for
-%% exporting logs. It can be configured through its application
-%% environment, the OS environment or directly through a map of options
-%% passed when setting up the exporter in the batch processor.
+%% @doc Exports logs using OTLP. Configuration sources, defaults and
+%% `OTEL_EXPORTER_OTLP_*' environment variables are normalized by
+%% `otel_configuration_sdk' before this exporter is initialized. `init/1'
+%% consumes the resulting option map and does not read application or OS
+%% environment itself.
 %%
-%% `opentelemetry_experimental' application environment options are:
-%%
-%% <ul>
-%%   <li>
-%%     `otlp_endpoint': The URL to send traces, metrics and logs to, for logs the
-%%     path `v1/logs' is appended to the path in the URL.
-%%   </li>
-%%   <li>
-%%     `otlp_logs_endpoint': URL to send only logs to. This takes precedence
-%%     for exporting logs and the path of the URL is kept as is, no suffix is
-%%     appended.
-%%   </li>
-%%   <li>
-%%     `otlp_headers': List of additional headers (`[{unicode:chardata(), unicode:chardata()}]') to add to export requests.
-%%   </li>
-%%   <li>
-%%     `otlp_logs_headers': Additional headers (`[{unicode:chardata(), unicode:chardata()}]') to add to only trace export requests.
-%%   </li>
-%%   <li>
-%%     `otlp_protocol': The transport protocol, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.
-%%   </li>
-%%   <li>
-%%     `otlp_logs_protocol': The transport protocol to use for exporting logs, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'
-%%   </li>
-%%   <li>
-%%     `otlp_compression': Compression type to use, supported values: `gzip'. Defaults to no compression.
-%%   </li>
-%%   <li>
-%%     `otlp_logs_compression': Compression type to use for exporting logs, supported values: `gzip'. Defaults to no compression.
-%%   </li>
-%% </ul>
-%%
-%% There also corresponding OS environment variables can also set those
-%% configuration values:
-%%
-%% <ul>
-%%   <li>`OTEL_EXPORTER_OTLP_ENDPOINT': The URL to send logs and metrics to, for logs the path `v1/logs' is appended to the path in the URL.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT': URL to send only logs to. This takes precedence for exporting logs and the path of the URL is kept as is, no suffix is appended.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_HEADERS': List of additional headers to add to export requests.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_LOGS_HEADERS': Additional headers to add to only trace export requests.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_PROTOCOL': The transport protocol to use, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_LOGS_PROTOCOL': The transport protocol to use for exporting logs, supported values: `grpc' and `http_protobuf'. Defaults to `http_protobuf'.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_COMPRESSION': Compression to use, supported value: gzip. Defaults to no compression.</li>
-%%   <li>`OTEL_EXPORTER_OTLP_LOGS_COMPRESSION': Compression to use when exporting logs, supported value: gzip. Defaults to no compression.</li>
-%% </ul>
-%%
-%% You can also set these configuration values in the map passed to the
-%% opentelemetry processor configuration.
+%% The normalized option map contains:
 %% <ul>
 %%   <li>`endpoints': A list of endpoints to send logs to. Can take one of the forms described below. By default, exporter sends data to `http://localhost:4318'.</li>
 %%   <li>`headers': List of additional headers to add to export requests.</li>
@@ -104,8 +58,6 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--define(DEFAULT_LOGS_PATH, "v1/logs").
-
 -record(state, {channel :: term(),
                 httpc_profile :: atom() | undefined,
                 protocol :: otel_exporter_otlp:protocol(),
@@ -118,8 +70,7 @@
 %% @doc Initialize the exporter based on the provided configuration.
 -spec init(otel_exporter_otlp:opts()) -> {ok, #state{}}.
 init(Opts) ->
-    Opts1 = merge_with_environment(Opts),
-    case otel_exporter_otlp:init(Opts1) of
+    case otel_exporter_otlp:init(Opts) of
         {ok, #{channel := Channel,
                channel_pid := ChannelPid,
                endpoints := Endpoints,
@@ -205,48 +156,3 @@ shutdown(#state{channel_pid=undefined}) ->
 shutdown(#state{channel_pid=Pid}) ->
     _ = grpcbox_channel:stop(Pid),
     ok.
-
-%%
-
-merge_with_environment(Opts) ->
-    %% exporters are initialized by calling their `init/1' function from `opentelemetry'.
-    %% since this application depends on `opentelemetry' it will not be started during
-    %% boot before its `init/1' is called. In a release this is fine since all apps
-    %% are loaded first, before any are started, but in case this is run not by a
-    %% release we load the application here to ensure the application environment is
-    %% available to read configuration from.
-    application:load(opentelemetry_experimental),
-    AppEnv = application:get_all_env(opentelemetry_experimental),
-    otel_exporter_otlp:merge_with_environment(config_mapping(),
-                                              AppEnv,
-                                              Opts,
-                                              otlp_logs_endpoint,
-                                              otlp_logs_headers,
-                                              otlp_logs_protocol,
-                                              otlp_logs_compression,
-                                              ?DEFAULT_LOGS_PATH).
-
-config_mapping() ->
-    [
-     %% endpoint the Otel protocol exporter should connect to
-     {"OTEL_EXPORTER_OTLP_ENDPOINT", otlp_endpoint, url},
-     {"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", otlp_logs_endpoint, url},
-
-     %% headers to include in requests the exporter makes over the Otel protocol
-     {"OTEL_EXPORTER_OTLP_HEADERS", otlp_headers, key_value_list},
-     {"OTEL_EXPORTER_OTLP_LOGS_HEADERS", otlp_logs_headers, key_value_list},
-
-     {"OTEL_EXPORTER_OTLP_PROTOCOL", otlp_protocol, otlp_protocol},
-     {"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", exporter_otlp_logs_protocol, otlp_protocol},
-
-     {"OTEL_EXPORTER_OTLP_COMPRESSION", otlp_compression, existing_atom},
-     {"OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", otlp_logs_compression, existing_atom},
-
-     %% {"OTEL_EXPORTER_OTLP_CERTIFICATE", otlp_certificate, path},
-     %% {"OTEL_EXPORTER_OTLP_LOGS_CERTIFICATE", otlp_logs_certificate, path},
-
-     %% {"OTEL_EXPORTER_OTLP_TIMEOUT", otlp_timeout, integer},
-     %% {"OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", otlp_logs_timeout, integer}
-
-     {"OTEL_EXPORTER_SSL_OPTIONS", ssl_options, key_value_list}
-    ].

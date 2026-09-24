@@ -29,14 +29,13 @@
 -define(BATCH_PROCESSOR_DEFAULTS, #{scheduled_delay_ms => 5000,
                                     exporting_timeout_ms => 30000,
                                     max_queue_size => 2048,
-                                    exporter => {opentelemetry_exporter, #{}}}).
+                                    exporter => {otel_exporter_otlp_span, #{}}}).
 -define(SIMPLE_PROCESSOR_DEFAULTS, #{exporting_timeout_ms => 30000,
-                                     exporter => {opentelemetry_exporter, #{}}}).
+                                     exporter => {otel_exporter_otlp_span, #{}}}).
 
 %% required configuration
 %% using a map instead of a record because there can be more values
--type t() :: #{configuration_source := legacy | declarative,
-               sdk_disabled := boolean(),
+-type t() :: #{sdk_disabled := boolean(),
                traces_enabled := boolean(),
                metrics_enabled := boolean(),
                log_level := atom(),
@@ -88,8 +87,7 @@ resolve(Overrides) ->
 
 -spec defaults() -> t().
 defaults() ->
-    #{configuration_source => legacy,
-      sdk_disabled => false,
+    #{sdk_disabled => false,
       traces_enabled => true,
       metrics_enabled => true,
       log_level => info,
@@ -106,8 +104,8 @@ defaults() ->
       bsp_max_queue_size => undefined,
       ssp_exporting_timeout_ms => undefined,
       text_map_propagators => [trace_context, baggage],
-      traces_exporter => {opentelemetry_exporter, #{}},
-      metrics_exporter => {opentelemetry_exporter, #{}},
+      traces_exporter => {otel_exporter_otlp_span, #{}},
+      metrics_exporter => {otel_exporter_otlp_metric, #{}},
       views => [],
       readers => [],
       exemplars_enabled => false,
@@ -328,8 +326,8 @@ config_mappings(general_sdk) ->
      {"OTEL_ID_GENERATOR", id_generator, existing_atom},
      {"OTEL_DENY_LIST", deny_list, existing_atom_list},
      {"OTEL_PROPAGATORS", text_map_propagators, propagators},
-     {"OTEL_TRACES_EXPORTER", traces_exporter, exporter},
-     {"OTEL_METRICS_EXPORTER", metrics_exporter, exporter},
+     {"OTEL_TRACES_EXPORTER", traces_exporter, span_exporter},
+     {"OTEL_METRICS_EXPORTER", metrics_exporter, metric_exporter},
      {"OTEL_METRIC_VIEWS", views, views},
      {"OTEL_METRIC_READERS", readers, readers},
      {"OTEL_ERLANG_X_EXEMPLARS_ENABLED", exemplars_enabled, boolean},
@@ -378,21 +376,31 @@ transform(existing_atom_list, String) when is_list(String) ->
                                     false
                             end
                     end, List);
-transform(exporter, Exporter) when Exporter =:= "otlp" ; Exporter =:= otlp ->
-    {opentelemetry_exporter, #{}};
-transform(exporter, Exporter) when Exporter =:= "jaeger" ; Exporter =:= jaeger ->
+transform(span_exporter, Exporter) when Exporter =:= "otlp"; Exporter =:= otlp ->
+    {otel_exporter_otlp_span, #{}};
+transform(span_exporter, Exporter) when Exporter =:= "jaeger"; Exporter =:= jaeger ->
     ?LOG_WARNING("configuring jaeger exporter through OTEL_TRACES_EXPORTER is not yet supported ", []),
     none;
-transform(exporter, Exporter)  when Exporter =:= "zipkin" ; Exporter =:= zipkin ->
+transform(span_exporter, Exporter) when Exporter =:= "zipkin"; Exporter =:= zipkin ->
     ?LOG_WARNING("configuring zipkin exporter through OTEL_TRACES_EXPORTER is not yet supported ", []),
     none;
-transform(exporter, Exporter) when Exporter =:= "none" ; Exporter =:= none ->
+transform(span_exporter, Exporter) when Exporter =:= "none"; Exporter =:= none ->
     none;
-transform(exporter, Value={Term, _}) when is_atom(Term) ->
+transform(span_exporter, Value={Term, _}) when is_atom(Term) ->
     Value;
-transform(exporter, UnknownExporter) when is_list(UnknownExporter) ->
+transform(span_exporter, UnknownExporter) when is_list(UnknownExporter) ->
     ?LOG_WARNING("unknown exporter ~p. falling back to default otlp", [UnknownExporter]),
-    {opentelemetry_exporter, #{}};
+    {otel_exporter_otlp_span, #{}};
+
+transform(metric_exporter, Exporter) when Exporter =:= "otlp"; Exporter =:= otlp ->
+    {otel_exporter_otlp_metric, #{}};
+transform(metric_exporter, Exporter) when Exporter =:= "none"; Exporter =:= none ->
+    none;
+transform(metric_exporter, Value={Term, _}) when is_atom(Term) ->
+    Value;
+transform(metric_exporter, UnknownExporter) when is_list(UnknownExporter) ->
+    ?LOG_WARNING("unknown metric exporter ~p. falling back to default otlp", [UnknownExporter]),
+    {otel_exporter_otlp_metric, #{}};
 
 transform(otlp_protocol, Proto) when Proto =:= "grpc"; Proto =:= grpc ->
   grpc;

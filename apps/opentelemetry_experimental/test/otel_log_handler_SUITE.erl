@@ -61,7 +61,7 @@ flush() ->
         0 -> ok
     end.
 
-%% --- otel_exporter test double (logs signal) ---
+%% --- log exporter test double ---
 init({logs, Pid}) ->
     {ok, Pid}.
 

@@ -113,7 +113,7 @@ pass to the exporter when calling `init/1`.
 
 An Exporter is responsible for serializing the Metrics and sending to some
 backend for processing. Exporters are called by the Reader. There is a builtin
-exporter for sending to either an OTLP backend, `otel_exporter_metrics_otlp`,
+exporter for sending to either an OTLP backend, `otel_exporter_otlp_metric`,
 (like the OpenTelemetry collector) or to stdout, `otel_metric_exporter_console`.
 
 The Exporter is configured as part of a Reader. For example, a Reader which uses

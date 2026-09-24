@@ -145,7 +145,7 @@ init([_RegName, Config]) ->
     ExportingTimeout = maps:get(exporting_timeout_ms, Config, ?DEFAULT_EXPORTER_TIMEOUT_MS),
     ScheduledDelay = maps:get(scheduled_delay_ms, Config, ?DEFAULT_SCHEDULED_DELAY_MS),
 
-    ExporterConfig = maps:get(exporter, Config, {opentelemetry_exporter, #{protocol => grpc}}),
+    ExporterConfig = maps:get(exporter, Config, {otel_exporter_otlp_log, #{protocol => grpc}}),
 
     {ok, idle, #data{exporter=undefined,
                      exporter_config=ExporterConfig,
@@ -219,12 +219,18 @@ handle_event(_, _, _) ->
 %%
 
 init_exporter(ExporterConfig) ->
-    case otel_exporter:init(ExporterConfig) of
+    case otel_exporter_log:init(normalize_exporter(ExporterConfig)) of
         Exporter when Exporter =/= undefined andalso Exporter =/= none ->
             Exporter;
         _ ->
             undefined
     end.
+
+normalize_exporter({otel_exporter_otlp_log, Options}) when is_map(Options) ->
+    {otel_exporter_otlp_log,
+     otel_configuration_sdk:otlp_exporter_options(log, Options)};
+normalize_exporter(Exporter) ->
+    Exporter.
 
 export(undefined, _, _, _) ->
     true;
@@ -232,7 +238,7 @@ export(Exporter, Resource, Batch, Config) ->
     %% don't let a exporter exception crash us
     %% and return true if exporter failed
     try
-        otel_exporter_logs:export(Exporter, {Batch, Config}, Resource)
+        otel_exporter_log:export(Exporter, {Batch, Config}, Resource)
             =:= failed_not_retryable
     catch
         Kind:Reason:StackTrace ->

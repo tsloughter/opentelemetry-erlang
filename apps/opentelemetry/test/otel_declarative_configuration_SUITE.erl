@@ -110,9 +110,9 @@ resolves_trace_configuration(_Config) ->
     [Simple, Batch] = otel_configuration_sdk:span_processors(TracerProvider),
     {otel_simple_processor, SimpleConfig} =
         otel_configuration_sdk:span_processor_component(Simple),
-    SimpleExporterComponent = {opentelemetry_exporter, _} =
+    SimpleExporterComponent = {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter_component(SimpleConfig),
-    {opentelemetry_exporter, _} =
+    {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter(SimpleExporterComponent),
     SimpleExporterOptions =
         otel_configuration_sdk:otlp_exporter_options(SimpleExporterComponent),
@@ -152,9 +152,9 @@ check_client_tls_uses_system_trust() ->
     [Processor] = otel_configuration_sdk:span_processors(TracerProvider),
     {otel_simple_processor, ProcessorConfig} =
         otel_configuration_sdk:span_processor_component(Processor),
-    ExporterComponent = {opentelemetry_exporter, _} =
+    ExporterComponent = {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter_component(ProcessorConfig),
-    {opentelemetry_exporter, _} =
+    {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter(ExporterComponent),
     ExporterOptions = otel_configuration_sdk:otlp_exporter_options(ExporterComponent),
     ?assertEqual({system_defaults,
@@ -187,9 +187,9 @@ supports_atom_keys(_Config) ->
     [Processor] = otel_configuration_sdk:span_processors(TracerProvider),
     {otel_simple_processor, ProcessorConfig} =
         otel_configuration_sdk:span_processor_component(Processor),
-    ExporterComponent = {opentelemetry_exporter, _} =
+    ExporterComponent = {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter_component(ProcessorConfig),
-    {opentelemetry_exporter, _} =
+    {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter(ExporterComponent),
     ExporterOptions = otel_configuration_sdk:otlp_exporter_options(ExporterComponent),
     ?assertMatch(#{protocol := http_protobuf,
@@ -249,9 +249,9 @@ decodes_key_value_list_escaping(_Config) ->
     [Processor] = otel_configuration_sdk:span_processors(TracerProvider),
     {otel_simple_processor, ProcessorConfig} =
         otel_configuration_sdk:span_processor_component(Processor),
-    ExporterComponent = {opentelemetry_exporter, _} =
+    ExporterComponent = {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter_component(ProcessorConfig),
-    {opentelemetry_exporter, _} =
+    {otel_exporter_otlp_span, _} =
         otel_configuration_sdk:span_exporter(ExporterComponent),
     ExporterOptions = otel_configuration_sdk:otlp_exporter_options(ExporterComponent),
     ?assertEqual([{<<"header,key">>, <<"header=value">>},

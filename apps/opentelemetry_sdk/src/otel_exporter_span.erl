@@ -41,10 +41,10 @@
 -callback shutdown(term()) -> ok.
 
 init(Opts) ->
-    otel_exporter:init(Opts).
+    otel_exporter_lifecycle:init(Opts).
 
 export({ExporterModule, State}, Batch) ->
     ExporterModule:export(Batch, State).
 
 shutdown(Exporter) ->
-    otel_exporter:shutdown(Exporter).
+    otel_exporter_lifecycle:shutdown(Exporter).

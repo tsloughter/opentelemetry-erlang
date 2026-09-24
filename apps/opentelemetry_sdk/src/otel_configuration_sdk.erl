@@ -32,6 +32,7 @@
          span_processor_component/1,
          span_exporter/1,
          otlp_exporter_options/1,
+         otlp_exporter_options/2,
          span_limits/1,
          source/1]).
 
@@ -44,12 +45,11 @@
 -type id_generator_component() :: module().
 -type span_exporter_component() :: {module(), term()}.
 -type otlp_exporter_options() ::
-        #{endpoints := [binary()],
-          headers := [{binary(), binary()}],
-          protocol := grpc | http_protobuf,
-          compression := gzip | undefined,
-          ssl_options := list() | {system_defaults, list()} | undefined,
-          configuration_source := declarative}.
+        #{endpoints := [otel_exporter_otlp:endpoint()],
+          headers := otel_exporter_otlp:headers(),
+          protocol := otel_exporter_otlp:protocol(),
+          compression := otel_exporter_otlp:compression() | undefined,
+          ssl_options := list() | {system_defaults, list()} | undefined}.
 -type batch_processor_configuration() ::
         #{exporter => span_exporter_component() | none,
           schedule_delay => non_neg_integer(),
@@ -126,6 +126,7 @@
           {ok, configuration()} | {error, error_reason()}.
 create(Model) ->
     Raw = otel_configuration_model:root(Model),
+    Source = otel_configuration_model:source(Model),
     try
         validate_top_level(Raw),
         validate_distribution(Raw),
@@ -138,7 +139,7 @@ create(Model) ->
               resource => resolve_resource(Raw),
               text_map_propagators => resolve_text_map_propagators(Raw),
               span_limits => resolve_span_limits(Raw),
-              tracer_provider => resolve_tracer_provider(Raw),
+              tracer_provider => resolve_tracer_provider(Raw, Source),
               distribution => resolve_distribution(Raw)},
         {ok, maybe_put_log_level(Raw, Configuration0)}
     catch
@@ -463,7 +464,7 @@ propagator_name(<<"b3multi">>) -> b3multi;
 propagator_name(Name) ->
     fail({unsupported_configuration, [propagator, composite_list], Name}).
 
-resolve_tracer_provider(Configuration) ->
+resolve_tracer_provider(Configuration, Source) ->
     case find(tracer_provider, Configuration) of
         error -> undefined;
         {ok, null} -> undefined;
@@ -473,7 +474,7 @@ resolve_tracer_provider(Configuration) ->
             validate_tracer_limits(TracerProvider),
             Processors = required(processors, TracerProvider,
                                   [tracer_provider, processors]),
-            #{processors => resolve_span_processors(Processors),
+            #{processors => resolve_span_processors(Processors, Source),
               sampler => resolve_sampler(TracerProvider),
               id_generator => resolve_id_generator(TracerProvider)};
         {ok, Value} ->
@@ -487,41 +488,43 @@ resolve_sampler(TracerProvider) ->
         {ok, SamplerConfig} -> sampler(SamplerConfig, [tracer_provider, sampler])
     end.
 
-resolve_span_processors(Processors) when is_list(Processors) ->
-    [resolve_span_processor(Processor) || Processor <- Processors];
-resolve_span_processors(Value) ->
+resolve_span_processors(Processors, Source) when is_list(Processors) ->
+    [resolve_span_processor(Processor, Source) || Processor <- Processors];
+resolve_span_processors(Value, _Source) ->
     fail({invalid_configuration, [tracer_provider, processors], Value}).
 
-resolve_span_processor({Module, Config}) when is_atom(Module), is_map(Config) ->
+resolve_span_processor({Module, Config}, Source) when is_atom(Module), is_map(Config) ->
     case Module of
         otel_batch_processor ->
-            {Module, resolve_processor_config(batch, Config)};
+            {Module, resolve_processor_config(batch, Config, Source)};
         otel_simple_processor ->
-            {Module, resolve_processor_config(simple, Config)};
+            {Module, resolve_processor_config(simple, Config, Source)};
         _ ->
             {Module, Config}
     end;
-resolve_span_processor(Component) when is_map(Component), map_size(Component) =:= 1 ->
+resolve_span_processor(Component, Source) when is_map(Component), map_size(Component) =:= 1 ->
     case first_entry(Component) of
         {batch, Config0} ->
             {otel_batch_processor,
              resolve_processor_config(batch,
                                       component_map(Config0,
-                                                    [tracer_provider, processors, batch]))};
+                                                    [tracer_provider, processors, batch]),
+                                      Source)};
         {simple, Config0} ->
             {otel_simple_processor,
              resolve_processor_config(simple,
                                       component_map(Config0,
-                                                    [tracer_provider, processors, simple]))};
+                                                    [tracer_provider, processors, simple]),
+                                      Source)};
         {Name, Config} when is_atom(Name) ->
             {Name, null_to_map(Config)};
         {Name, _} ->
             fail({unsupported_configuration, [tracer_provider, processors], Name})
     end;
-resolve_span_processor(Value) ->
+resolve_span_processor(Value, _Source) ->
     fail({invalid_configuration, [tracer_provider, processors], Value}).
 
-resolve_processor_config(Kind, Config) ->
+resolve_processor_config(Kind, Config, Source) ->
     Path = [tracer_provider, processors, Kind],
     case Kind of
         batch ->
@@ -530,7 +533,7 @@ resolve_processor_config(Kind, Config) ->
         simple -> ok
     end,
     Exporter = required(exporter, Config, Path ++ [exporter]),
-    Resolved0 = #{exporter => resolve_span_exporter(Exporter)},
+    Resolved0 = #{exporter => resolve_span_exporter(Exporter, Source)},
     Keys = case Kind of
                batch -> [schedule_delay, export_timeout, max_queue_size, check_table_size];
                simple -> [export_timeout]
@@ -612,55 +615,46 @@ span_exporter(Value) ->
     fail({invalid_configuration, [tracer_provider, processors, exporter], Value}).
 
 -spec otlp_exporter_options(span_exporter_component()) -> otlp_exporter_options().
-otlp_exporter_options(
-  {opentelemetry_exporter,
-   #{endpoints := Endpoints,
-     headers := Headers,
-     protocol := Protocol,
-     compression := Compression,
-     ssl_options := SSLOptions,
-     configuration_source := declarative}}) ->
-    #{endpoints => otlp_endpoints(Endpoints),
-      headers => otlp_headers(Headers),
-      protocol => otlp_protocol(Protocol),
-      compression => otlp_compression(Compression),
-      ssl_options => otlp_ssl_options(SSLOptions),
-      configuration_source => declarative};
+otlp_exporter_options({otel_exporter_otlp_span, Options}) when is_map(Options) ->
+    validate_otlp_exporter_options(span, Options);
 otlp_exporter_options(Exporter) ->
     fail({invalid_configuration,
           [tracer_provider, processors, exporter], Exporter}).
 
--spec otlp_endpoints(term()) -> [binary()].
-otlp_endpoints(Endpoints) when is_list(Endpoints) ->
-    [case Endpoint of
-         Binary when is_binary(Binary) -> Binary;
-         _ -> fail({invalid_configuration,
-                    [tracer_provider, processors, exporter, endpoints], Endpoint})
-     end || Endpoint <- Endpoints];
-otlp_endpoints(Value) ->
-    fail({invalid_configuration,
-          [tracer_provider, processors, exporter, endpoints], Value}).
+%% Normalize options supplied through Erlang application configuration. The
+%% standard OTLP environment variables override these values here, before an
+%% exporter process is started.
+-spec otlp_exporter_options(span | metric | log, map()) -> otlp_exporter_options().
+otlp_exporter_options(Signal, Options) when is_map(Options) ->
+    normalize_otlp_exporter_options(Signal, Options, application_env).
 
 -spec otlp_headers(term()) -> [{binary(), binary()}].
 otlp_headers(Headers) when is_list(Headers) ->
-    [case Header of
-         {Name, Value} when is_binary(Name), is_binary(Value) -> Header;
-         _ -> fail({invalid_configuration,
-                    [tracer_provider, processors, exporter, headers], Header})
-     end || Header <- Headers];
+    header_pairs(Headers);
 otlp_headers(Value) ->
     fail({invalid_configuration,
           [tracer_provider, processors, exporter, headers], Value}).
 
 -spec otlp_protocol(term()) -> grpc | http_protobuf.
 otlp_protocol(grpc) -> grpc;
+otlp_protocol(<<"grpc">>) -> grpc;
+otlp_protocol("grpc") -> grpc;
 otlp_protocol(http_protobuf) -> http_protobuf;
+otlp_protocol(<<"http/protobuf">>) -> http_protobuf;
+otlp_protocol("http/protobuf") -> http_protobuf;
+otlp_protocol(<<"http_protobuf">>) -> http_protobuf;
+otlp_protocol("http_protobuf") -> http_protobuf;
 otlp_protocol(Value) ->
     fail({invalid_configuration,
           [tracer_provider, processors, exporter, protocol], Value}).
 
 -spec otlp_compression(term()) -> gzip | undefined.
 otlp_compression(gzip) -> gzip;
+otlp_compression(<<"gzip">>) -> gzip;
+otlp_compression("gzip") -> gzip;
+otlp_compression(none) -> undefined;
+otlp_compression(<<"none">>) -> undefined;
+otlp_compression("none") -> undefined;
 otlp_compression(undefined) -> undefined;
 otlp_compression(Value) ->
     fail({invalid_configuration,
@@ -675,33 +669,214 @@ otlp_ssl_options(Value) ->
     fail({invalid_configuration,
           [tracer_provider, processors, exporter, ssl_options], Value}).
 
-resolve_span_exporter({opentelemetry_exporter, Options}) when is_map(Options) ->
-    case maps:is_key(protocol, Options) of
-        true -> {opentelemetry_exporter, Options};
-        false -> fail({invalid_configuration,
-                       [tracer_provider, processors, exporter], Options})
-    end;
-resolve_span_exporter(none) ->
-    none;
-resolve_span_exporter({otlp_http, Config}) ->
-    otlp_exporter(http, Config);
-resolve_span_exporter({otlp_grpc, Config}) ->
-    otlp_exporter(grpc, Config);
-resolve_span_exporter({Module, Config}) when is_atom(Module) ->
-    {Module, Config};
-resolve_span_exporter(Exporter) ->
-    validate_span_exporter(Exporter).
+validate_otlp_exporter_options(_Signal,
+                               #{endpoints := Endpoints,
+                                 headers := Headers,
+                                 protocol := Protocol,
+                                 compression := Compression,
+                                 ssl_options := SSLOptions}=Options) ->
+    Options#{endpoints => endpoint_list(Endpoints),
+             headers => otlp_headers(Headers),
+             protocol => otlp_protocol(Protocol),
+             compression => otlp_compression(Compression),
+             ssl_options => otlp_ssl_options(SSLOptions)};
+validate_otlp_exporter_options(_Signal, Options) ->
+    fail({invalid_configuration,
+          [tracer_provider, processors, exporter], Options}).
 
-validate_span_exporter(Exporter) when is_map(Exporter), map_size(Exporter) =:= 1 ->
+normalize_otlp_exporter_options(Signal, Options, Source) ->
+    Protocol0 = otlp_protocol(maps:get(protocol, Options, http_protobuf)),
+    Protocol = environment_override(Source,
+                                    otlp_protocol_environment(Signal),
+                                    "OTEL_EXPORTER_OTLP_PROTOCOL",
+                                    fun otlp_protocol/1,
+                                    Protocol0),
+    Endpoints0 = endpoint_list(maps:get(endpoints, Options,
+                                        default_otlp_endpoints(Protocol))),
+    Endpoints1 = append_signal_path(Endpoints0, Protocol, Signal),
+    Endpoints = environment_endpoints(Source, Signal, Protocol, Endpoints1),
+    Headers0 = otlp_headers(maps:get(headers, Options, [])),
+    Headers = environment_override(Source,
+                                   otlp_headers_environment(Signal),
+                                   "OTEL_EXPORTER_OTLP_HEADERS",
+                                   fun(Value) ->
+                                           parse_key_value_list(Value,
+                                                                [exporter, headers])
+                                   end,
+                                   Headers0),
+    Compression0 = otlp_compression(maps:get(compression, Options, undefined)),
+    Compression = environment_override(Source,
+                                       otlp_compression_environment(Signal),
+                                       "OTEL_EXPORTER_OTLP_COMPRESSION",
+                                       fun otlp_compression/1,
+                                       Compression0),
+    SSLOptions = otlp_ssl_options(maps:get(ssl_options, Options, undefined)),
+    Options#{endpoints => Endpoints,
+             headers => Headers,
+             protocol => Protocol,
+             compression => Compression,
+             ssl_options => SSLOptions}.
+
+apply_otlp_environment(_Signal, Options, declarative) ->
+    Options;
+apply_otlp_environment(Signal, Options, application_env) ->
+    Protocol = environment_override(application_env,
+                                    otlp_protocol_environment(Signal),
+                                    "OTEL_EXPORTER_OTLP_PROTOCOL",
+                                    fun otlp_protocol/1,
+                                    maps:get(protocol, Options)),
+    Endpoints = environment_endpoints(application_env,
+                                      Signal,
+                                      Protocol,
+                                      maps:get(endpoints, Options)),
+    Headers = environment_override(application_env,
+                                   otlp_headers_environment(Signal),
+                                   "OTEL_EXPORTER_OTLP_HEADERS",
+                                   fun(Value) ->
+                                           parse_key_value_list(Value,
+                                                                [exporter, headers])
+                                   end,
+                                   maps:get(headers, Options)),
+    Compression = environment_override(application_env,
+                                       otlp_compression_environment(Signal),
+                                       "OTEL_EXPORTER_OTLP_COMPRESSION",
+                                       fun otlp_compression/1,
+                                       maps:get(compression, Options)),
+    Options#{endpoints => Endpoints,
+             headers => Headers,
+             protocol => Protocol,
+             compression => Compression}.
+
+environment_endpoints(declarative, _Signal, _Protocol, Endpoints) ->
+    Endpoints;
+environment_endpoints(application_env, Signal, Protocol, Endpoints) ->
+    case os:getenv(otlp_endpoint_environment(Signal)) of
+        false ->
+            case os:getenv("OTEL_EXPORTER_OTLP_ENDPOINT") of
+                false -> Endpoints;
+                Endpoint -> append_signal_path([Endpoint], Protocol, Signal)
+            end;
+        Endpoint ->
+            [normalize_endpoint(Endpoint)]
+    end.
+
+environment_override(declarative, _SignalName, _GeneralName,
+                     _Transform, Default) ->
+    Default;
+environment_override(application_env, SignalName, GeneralName,
+                     Transform, Default) ->
+    case os:getenv(SignalName) of
+        false ->
+            case os:getenv(GeneralName) of
+                false -> Default;
+                Value -> Transform(Value)
+            end;
+        Value ->
+            Transform(Value)
+    end.
+
+default_otlp_endpoints(http_protobuf) -> [<<"http://localhost:4318">>];
+default_otlp_endpoints(grpc) -> [<<"http://localhost:4317">>].
+
+endpoint_list(Endpoint) when is_binary(Endpoint); is_map(Endpoint); is_tuple(Endpoint) ->
+    [Endpoint];
+endpoint_list([]) ->
+    [];
+endpoint_list(Endpoints) when is_list(Endpoints) ->
+    case io_lib:printable_unicode_list(Endpoints) of
+        true -> [Endpoints];
+        false -> Endpoints
+    end;
+endpoint_list(Value) ->
+    fail({invalid_configuration,
+          [tracer_provider, processors, exporter, endpoints], Value}).
+
+append_signal_path(Endpoints, http_protobuf, Signal) ->
+    [append_endpoint_path(Endpoint, otlp_signal_path(Signal)) || Endpoint <- Endpoints];
+append_signal_path(Endpoints, grpc, _Signal) ->
+    [normalize_endpoint(Endpoint) || Endpoint <- Endpoints].
+
+normalize_endpoint(Endpoint) ->
+    append_endpoint_path(Endpoint, "").
+
+append_endpoint_path({Scheme, Host, Port, SSLOptions}, Path) ->
+    normalize_endpoint_map(
+      #{scheme => Scheme,
+        host => Host,
+        port => Port,
+        path => filename:join([], Path),
+        ssl_options => SSLOptions});
+append_endpoint_path(Endpoint=#{path := ExistingPath}, Path) ->
+    normalize_endpoint_map(Endpoint#{path => filename:join(ExistingPath, Path)});
+append_endpoint_path(Endpoint=#{}, Path) ->
+    normalize_endpoint_map(Endpoint#{path => filename:join([], Path)});
+append_endpoint_path(Endpoint, Path) when is_list(Endpoint); is_binary(Endpoint) ->
+    case uri_string:parse(Endpoint) of
+        Parsed=#{path := ExistingPath} ->
+            normalize_endpoint_map(
+              Parsed#{path => filename:join(ExistingPath, Path)});
+        Parsed when is_map(Parsed) ->
+            normalize_endpoint_map(Parsed#{path => filename:join([], Path)});
+        Error ->
+            fail({invalid_configuration,
+                  [tracer_provider, processors, exporter, endpoints], Error})
+    end.
+
+normalize_endpoint_map(Endpoint) ->
+    lists:foldl(
+      fun(Key, Acc) ->
+              maps:update_with(Key, fun to_binary/1, Acc)
+      end, Endpoint, [scheme, host, path]).
+
+otlp_signal_path(span) -> "v1/traces";
+otlp_signal_path(metric) -> "v1/metrics";
+otlp_signal_path(log) -> "v1/logs".
+
+otlp_endpoint_environment(span) -> "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT";
+otlp_endpoint_environment(metric) -> "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT";
+otlp_endpoint_environment(log) -> "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT".
+
+otlp_headers_environment(span) -> "OTEL_EXPORTER_OTLP_TRACES_HEADERS";
+otlp_headers_environment(metric) -> "OTEL_EXPORTER_OTLP_METRICS_HEADERS";
+otlp_headers_environment(log) -> "OTEL_EXPORTER_OTLP_LOGS_HEADERS".
+
+otlp_protocol_environment(span) -> "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL";
+otlp_protocol_environment(metric) -> "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL";
+otlp_protocol_environment(log) -> "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL".
+
+otlp_compression_environment(span) -> "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION";
+otlp_compression_environment(metric) -> "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION";
+otlp_compression_environment(log) -> "OTEL_EXPORTER_OTLP_LOGS_COMPRESSION".
+
+resolve_span_exporter({otel_exporter_otlp_span, Options}, Source) when is_map(Options) ->
+    {otel_exporter_otlp_span,
+     normalize_otlp_exporter_options(span, Options, Source)};
+resolve_span_exporter(none, _Source) ->
+    none;
+resolve_span_exporter({otlp_http, Config}, Source) ->
+    resolve_otlp_exporter(http, Config, Source);
+resolve_span_exporter({otlp_grpc, Config}, Source) ->
+    resolve_otlp_exporter(grpc, Config, Source);
+resolve_span_exporter({Module, Config}, _Source) when is_atom(Module) ->
+    {Module, Config};
+resolve_span_exporter(Exporter, Source) ->
+    validate_span_exporter(Exporter, Source).
+
+validate_span_exporter(Exporter, Source) when is_map(Exporter), map_size(Exporter) =:= 1 ->
     case first_entry(Exporter) of
-        {otlp_http, Config0} -> otlp_exporter(http, Config0);
-        {otlp_grpc, Config0} -> otlp_exporter(grpc, Config0);
+        {otlp_http, Config0} -> resolve_otlp_exporter(http, Config0, Source);
+        {otlp_grpc, Config0} -> resolve_otlp_exporter(grpc, Config0, Source);
         {Name, Config} when is_atom(Name) -> {Name, null_to_map(Config)};
         {Name, _} -> fail({unsupported_configuration,
                            [tracer_provider, processors, exporter], Name})
     end;
-validate_span_exporter(Value) ->
+validate_span_exporter(Value, _Source) ->
     fail({invalid_configuration, [tracer_provider, processors, exporter], Value}).
+
+resolve_otlp_exporter(Transport, Config, Source) ->
+    {otel_exporter_otlp_span, Options} = otlp_exporter(Transport, Config),
+    {otel_exporter_otlp_span,
+     apply_otlp_environment(span, Options, Source)}.
 
 otlp_exporter(Transport, Config0) ->
     Path = [exporter, otlp_transport(Transport)],
@@ -714,13 +889,12 @@ otlp_exporter(Transport, Config0) ->
     Headers = exporter_headers(Config, Path),
     Compression = compression(value(compression, Config, none), Path ++ [compression]),
     SSLOptions = tls_options(value(tls, Config, undefined), Transport, Path ++ [tls]),
-    {opentelemetry_exporter,
+    {otel_exporter_otlp_span,
      #{endpoints => [Endpoint],
        headers => Headers,
        protocol => protocol(Transport),
        compression => Compression,
-       ssl_options => SSLOptions,
-       configuration_source => declarative}}.
+       ssl_options => SSLOptions}}.
 
 check_encoding(grpc, _Config, _Path) -> ok;
 check_encoding(http, Config, Path) ->

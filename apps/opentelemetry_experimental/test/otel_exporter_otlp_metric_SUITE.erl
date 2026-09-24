@@ -68,9 +68,13 @@ verify_export(Config) ->
                    4318
            end,
 
-    {ok, State} = otel_exporter_otlp_metric:init(#{protocol => Protocol,
-                                                    compression => Compression,
-                                                    endpoints => [{http, "localhost", Port, []}]}),
+    ExporterOptions =
+        otel_configuration_sdk:otlp_exporter_options(
+          metric,
+          #{protocol => Protocol,
+            compression => Compression,
+            endpoints => [{http, "localhost", Port, []}]}),
+    {ok, State} = otel_exporter_otlp_metric:init(ExporterOptions),
 
     %% Tempoararily adding this because without this, we would face
     %% {error, no_endpoints} when attempt to export when we have more
@@ -168,13 +172,19 @@ verify_export(Config) ->
 
 configuration(_Config) ->
     try
-        ?assertMatch(#{endpoints := [#{host := "localhost", path := "/v1/metrics", port := 4318,
-                                       scheme := "http"}]},
-                     otel_exporter_otlp_metric:merge_with_environment(#{}))
+        ?assertMatch(#{endpoints := [#{host := <<"localhost">>, path := <<"/v1/metrics">>, port := 4318,
+                                       scheme := <<"http">>}]},
+                     otel_configuration_sdk:otlp_exporter_options(metric, #{})),
+        ?assertMatch(#{endpoints := [#{host := <<"localhost">>, path := <<"/v1/logs">>, port := 4318,
+                                       scheme := <<"http">>}]},
+                     otel_configuration_sdk:otlp_exporter_options(log, #{}))
     after
         os:unsetenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
         os:unsetenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"),
         os:unsetenv("OTEL_EXPORTER_OTLP_HEADERS"),
         os:unsetenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS"),
-        os:unsetenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+        os:unsetenv("OTEL_EXPORTER_OTLP_PROTOCOL"),
+        os:unsetenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"),
+        os:unsetenv("OTEL_EXPORTER_OTLP_COMPRESSION"),
+        os:unsetenv("OTEL_EXPORTER_OTLP_METRICS_COMPRESSION")
     end.

@@ -21,22 +21,9 @@
 -export([init/1,
          export_http/6,
          export_grpc/5,
-         endpoints/2,
-         merge_with_environment/8]).
+         endpoints/2]).
 
 -include_lib("kernel/include/logger.hrl").
-
--define(DEFAULT_HTTP_PORT, 4318).
--define(DEFAULT_HTTP_ENDPOINTS, [#{host => "localhost",
-                                   path => [],
-                                   port => ?DEFAULT_HTTP_PORT,
-                                   scheme => "http"}]).
-
--define(DEFAULT_GRPC_PORT, 4317).
--define(DEFAULT_GRPC_ENDPOINTS, [#{host => "localhost",
-                                   path => [],
-                                   port => ?DEFAULT_GRPC_PORT,
-                                   scheme => "http"}]).
 
 -type headers() :: [{unicode:chardata(), unicode:chardata()}].
 -type endpoint() :: uri_string:uri_string() | uri_string:uri_map() |
@@ -68,11 +55,11 @@
 
 -type ssl_options() :: list() | {system_defaults, list()}.
 
--type opts() :: #{endpoints => [endpoint()],
-                  headers => headers(),
-                  protocol => protocol(),
-                  compression => compression() | undefined,
-                  ssl_options => ssl_options(),
+-type opts() :: #{endpoints := [endpoint()],
+                  headers := headers(),
+                  protocol := protocol(),
+                  compression := compression() | undefined,
+                  ssl_options := ssl_options() | undefined,
                   channel_opts => map(),
                   httpc_options => [httpc_option()]}.
 
@@ -94,7 +81,11 @@
 
 %% @doc Initialize the exporter based on the provided configuration.
 -spec init(opts()) -> {ok, state()}.
-init(Opts) ->
+init(#{endpoints := ConfiguredEndpoints,
+       headers := ConfiguredHeaders,
+       protocol := Protocol,
+       compression := ConfiguredCompression,
+       ssl_options := SSLOptions}=Opts) ->
     State = #{channel => undefined,
               httpc_profile => undefined,
               protocol => http_protobuf,
@@ -104,12 +95,11 @@ init(Opts) ->
               grpc_metadata => undefined,
               endpoints => []},
 
-    SSLOptions = maps:get(ssl_options, Opts, undefined),
-    Headers = headers(maps:get(headers, Opts, [])),
-    Compression = maps:get(compression, Opts, undefined),
-    case maps:get(protocol, Opts, http_protobuf) of
+    Headers = headers(ConfiguredHeaders),
+    Compression = ConfiguredCompression,
+    case Protocol of
         grpc ->
-            Endpoints = endpoints(maps:get(endpoints, Opts), SSLOptions),
+            Endpoints = endpoints(ConfiguredEndpoints, SSLOptions),
             ChannelOpts = maps:get(channel_opts, Opts, #{}),
             UpdatedChannelOpts = case Compression of
                                    undefined -> ChannelOpts;
@@ -144,7 +134,7 @@ init(Opts) ->
             end;
         http_protobuf ->
             HttpcProfile = start_httpc(Opts),
-            Endpoints = endpoints(maps:get(endpoints, Opts), SSLOptions),
+            Endpoints = endpoints(ConfiguredEndpoints, SSLOptions),
             {ok, State#{httpc_profile => HttpcProfile,
                         endpoints => Endpoints,
                         headers => Headers,
@@ -152,7 +142,7 @@ init(Opts) ->
                         protocol => http_protobuf}};
         http_json ->
             HttpcProfile = start_httpc(Opts),
-            Endpoints = endpoints(maps:get(endpoints, Opts), SSLOptions),
+            Endpoints = endpoints(ConfiguredEndpoints, SSLOptions),
             {ok, State#{httpc_profile => HttpcProfile,
                         endpoints => Endpoints,
                         headers => Headers,
@@ -371,129 +361,3 @@ to_existing_atom(Scheme) when is_binary(Scheme) ->
     list_to_existing_atom(binary_to_list(Scheme));
 to_existing_atom(_) ->
     erlang:error(bad_exporter_scheme).
-
-merge_with_environment(_ConfigMapping, _AppEnv,
-                       #{configuration_source := declarative}=Opts,
-                       _SignalEndpointConfigKey, _SignalHeadersConfigKey,
-                       _SignalProtocolConfigKey, _SignalCompressionConfigKey,
-                       _DefaultPath) ->
-    maps:remove(configuration_source, Opts);
-merge_with_environment(ConfigMapping, AppEnv, Opts, SignalEndpointConfigKey, SignalHeadersConfigKey, SignalProtocolConfigKey, SignalCompressionConfigKey, DefaultPath) ->
-    Config = #{otlp_endpoint => undefined,
-               SignalEndpointConfigKey => undefined,
-               otlp_headers => undefined,
-               SignalHeadersConfigKey => undefined,
-               otlp_protocol => undefined,
-               SignalProtocolConfigKey => undefined,
-               otlp_compression => undefined,
-               SignalCompressionConfigKey => undefined,
-               ssl_options => undefined},
-
-    AppOpts = otel_configuration:merge_list_with_environment(ConfigMapping, AppEnv, Config),
-
-    %% check for error in app env value parsing
-    case maps:get(otlp_endpoint, AppOpts) of
-        {error, Reason, Message} ->
-            ?LOG_WARNING("error parsing endpoint URI: ~s : ~p", [Reason, Message]),
-            maps:put(endpoints, [],
-                     maps:put(endpoints, [], Opts));
-
-        _ ->
-            Opts1 = update_opts(otlp_protocol, protocol, http_protobuf, AppOpts, Opts),
-            Opts2 = update_opts(SignalProtocolConfigKey, protocol, http_protobuf, AppOpts, Opts1),
-
-            %% append the default path `/v1/<signal>` only to the path of otlp_endpoint
-            Opts3 = update_opts(otlp_endpoint, endpoints, default_endpoints_for_protocol(Opts2), AppOpts, Opts2, fun maybe_to_list/1),
-            DefaultSignalEndpoints = endpoints_append_path(maps:get(endpoints, Opts3), maps:get(protocol, Opts3), DefaultPath),
-
-            %% now set `endpoints' to either the default signal value or the user configured value
-            Opts4 = update_opts(SignalEndpointConfigKey,
-                                endpoints,
-                                DefaultSignalEndpoints,
-                                AppOpts,
-                                Opts3#{endpoints => DefaultSignalEndpoints},
-                                fun maybe_to_list/1),
-
-            Opts5 = update_opts(otlp_headers, headers, [], AppOpts, Opts4),
-            Opts6 = update_opts(SignalHeadersConfigKey, headers, [], AppOpts, Opts5),
-
-            Opts7 = update_opts(otlp_compression, compression, undefined, AppOpts, Opts6),
-            Opts8 = update_opts(SignalCompressionConfigKey, compression, undefined, AppOpts, Opts7),
-
-            update_opts(ssl_options, ssl_options, undefined, AppOpts, Opts8)
-    end.
-
-default_endpoints_for_protocol(Opts) ->
-    case maps:get(protocol, Opts) of
-        http_protobuf ->
-            ?DEFAULT_HTTP_ENDPOINTS;
-        grpc ->
-            ?DEFAULT_GRPC_ENDPOINTS
-    end.
-
-maybe_to_list(E) when is_list(E) ->
-    case io_lib:printable_list(E) of
-        true ->
-            [E];
-        false ->
-            E
-    end;
-maybe_to_list(E) ->
-    [E].
-
-endpoints_append_path(Endpoints, http_protobuf, DefaultPath) ->
-    endpoints_append_path_(Endpoints, DefaultPath);
-endpoints_append_path(Endpoints, _, _) ->
-    endpoints_append_path_(Endpoints, "").
-
-endpoints_append_path_(E, DefaultPath) when is_list(E) ->
-    case io_lib:printable_list(E) of
-        true ->
-            [append_path(E, DefaultPath)];
-        false ->
-            [append_path(Endpoint, DefaultPath) || Endpoint <- E]
-    end;
-endpoints_append_path_(E, DefaultPath) ->
-    [append_path(E, DefaultPath)].
-
-append_path({Scheme, Host, Port, SSLOptions}, DefaultPath) ->
-    #{scheme => atom_to_list(Scheme),
-      host => Host,
-      port => Port,
-      path => filename:join([], DefaultPath),
-      ssl_options => SSLOptions};
-append_path(Endpoint=#{path := Path}, DefaultPath) ->
-    Endpoint#{path => filename:join(Path, DefaultPath)};
-append_path(Endpoint=#{}, DefaultPath) ->
-    Endpoint#{path => filename:join([], DefaultPath)};
-append_path(EndpointString, DefaultPath) when is_list(EndpointString) orelse is_binary(EndpointString) ->
-    Endpoint=#{path := Path} = uri_string:parse(EndpointString),
-    case Path of
-        PathList when is_list(PathList) ->
-            Endpoint#{path => filename:join(flat_path(PathList), DefaultPath)};
-        PathBinary when is_binary(PathBinary) ->
-            Endpoint#{path => filename:join(PathBinary, DefaultPath)}
-    end.
-
--spec flat_path(unicode:charlist()) -> string().
-flat_path([]) ->
-    [];
-flat_path([Character | Rest]) when is_integer(Character) ->
-    [Character | flat_path(Rest)].
-
-%% use the value from the environment if it exists, otherwise use the value
-%% passed in Opts or the default
-update_opts(AppKey, OptKey, Default, AppOpts, Opts) ->
-    update_opts(AppKey, OptKey, Default, AppOpts, Opts, fun id/1).
-
-update_opts(AppKey, OptKey, Default, AppOpts, Opts, Transform) ->
-    case maps:get(AppKey, AppOpts) of
-        undefined ->
-            %% use default unless already set, in which case just transform
-            maps:update_with(OptKey, Transform, Default, Opts);
-        EnvValue ->
-            maps:put(OptKey, Transform(EnvValue), Opts)
-    end.
-
-id(X) ->
-    X.

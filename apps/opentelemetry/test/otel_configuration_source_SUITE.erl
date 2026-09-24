@@ -12,6 +12,7 @@ all() ->
      file_configuration_takes_precedence,
      empty_file_environment_uses_application_configuration,
      application_environment_matches_json,
+     otlp_environment_only_overrides_application_configuration,
      rejects_legacy_application_environment,
      application_startup_uses_shared_declarative_configuration,
      omitted_resource_ignores_legacy_detection].
@@ -141,6 +142,46 @@ application_environment_matches_json(_Config) ->
                          otel_configuration_sdk:span_processor_component(
                            ApplicationProcessor))).
 
+otlp_environment_only_overrides_application_configuration(_Config) ->
+    os:putenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://environment:9876/base"),
+    os:putenv("OTEL_EXPORTER_OTLP_HEADERS", "source=environment"),
+    os:putenv("OTEL_EXPORTER_OTLP_COMPRESSION", "gzip"),
+    Declarative =
+        #{file_format => <<"1.1">>,
+          tracer_provider =>
+              #{processors =>
+                    [#{simple =>
+                           #{exporter =>
+                                 #{otlp_http =>
+                                       #{endpoint => <<"http://configured:4318/v1/traces">>,
+                                         headers =>
+                                             [#{name => <<"source">>,
+                                                value => <<"declarative">>}]}}}}]}},
+    Application =
+        [{tracer_provider,
+          #{processors =>
+                [{otel_simple_processor,
+                  #{exporter =>
+                        {otlp_http,
+                         #{endpoint => <<"http://configured:4318/v1/traces">>,
+                           headers => [{<<"source">>, <<"application">>}]}}}}]}}],
+
+    {ok, DeclarativeRuntime} = otel_configuration_declarative:resolve(Declarative),
+    {ok, ApplicationModel} =
+        otel_configuration_model:from_application_env(Application),
+    {ok, ApplicationRuntime} = otel_configuration_sdk:create(ApplicationModel),
+
+    ?assertMatch(#{endpoints := [<<"http://configured:4318/v1/traces">>],
+                   headers := [{<<"source">>, <<"declarative">>}],
+                   compression := undefined},
+                 span_exporter_options(DeclarativeRuntime)),
+    ?assertMatch(#{endpoints :=
+                       [#{scheme := <<"http">>, host := <<"environment">>,
+                          port := 9876, path := <<"/base/v1/traces">>}],
+                   headers := [{<<"source">>, <<"environment">>}],
+                   compression := gzip},
+                 span_exporter_options(ApplicationRuntime)).
+
 rejects_legacy_application_environment(_Config) ->
     ?assertEqual(
        {error,
@@ -206,6 +247,14 @@ resource_attributes_map(Resource) ->
         Attributes -> otel_attributes:map(Attributes)
     end.
 
+span_exporter_options(Configuration) ->
+    TracerProvider = otel_configuration_sdk:tracer_provider(Configuration),
+    [Processor] = otel_configuration_sdk:span_processors(TracerProvider),
+    {_Module, ProcessorOptions} =
+        otel_configuration_sdk:span_processor_component(Processor),
+    Exporter = otel_configuration_sdk:span_exporter_component(ProcessorOptions),
+    otel_configuration_sdk:otlp_exporter_options(Exporter).
+
 write_configuration(Directory, Name, LogLevel) ->
     File = filename:join(Directory, Name),
     JSON = iolist_to_binary(["{\"file_format\":\"1.1\",\"log_level\":\"",
@@ -235,4 +284,7 @@ environment_names() ->
      "OTEL_SERVICE_NAME",
      "OTEL_SERVICE_INSTANCE",
      "OTEL_RESOURCE_ATTRIBUTES",
-     "OTEL_PROPAGATORS"].
+     "OTEL_PROPAGATORS",
+     "OTEL_EXPORTER_OTLP_ENDPOINT",
+     "OTEL_EXPORTER_OTLP_HEADERS",
+     "OTEL_EXPORTER_OTLP_COMPRESSION"].

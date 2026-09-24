@@ -18,7 +18,7 @@
 
 -module(otel_metric_exporter_console).
 
--behaviour(otel_exporter_metrics).
+-behaviour(otel_exporter_metric).
 
 -export([init/1,
          export/3,
