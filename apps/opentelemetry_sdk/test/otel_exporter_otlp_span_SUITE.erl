@@ -18,7 +18,8 @@ all() ->
      {group, grpc}, {group, grpc_gzip}].
 
 groups() ->
-    [{functional, [], [configuration, span_round_trip, span_flags,
+    [{functional, [], [configuration, transport_lifecycle_and_errors,
+                       span_round_trip, span_flags,
                        ets_instrumentation_info, to_any_value_boolean, to_attributes]},
      {grpc, [], [verify_export]},
      {grpc_gzip, [], [verify_export]},
@@ -190,6 +191,46 @@ configuration(_Config) ->
         os:unsetenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"),
         os:unsetenv("OTEL_EXPORTER_OTLP_COMPRESSION"),
         os:unsetenv("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
+    end.
+
+transport_lifecycle_and_errors(_Config) ->
+    HttpOptions = otel_configuration_sdk:otlp_exporter_options(span, #{}),
+    {ok, HttpState} = otel_exporter_otlp_span:init(HttpOptions),
+    ok = otel_exporter_otlp_span:shutdown(HttpState),
+
+    GrpcOptions = otel_configuration_sdk:otlp_exporter_options(
+                    span, #{protocol => grpc}),
+    {ok, GrpcState} = otel_exporter_otlp_span:init(GrpcOptions),
+    ok = otel_exporter_otlp_span:shutdown(GrpcState),
+
+    ?assertEqual({error, no_endpoints},
+                 otel_exporter_otlp_span:init(HttpOptions#{endpoints => []})),
+    ?assertEqual({error, {invalid_endpoint, <<"://invalid">>}},
+                 otel_exporter_otlp_span:init(
+                   HttpOptions#{endpoints => [<<"://invalid">>]})),
+    ?assertEqual({error, {unsupported_protocol, http_json}},
+                 otel_exporter_otlp_span:init(HttpOptions#{protocol => http_json})),
+
+    ?assertMatch(
+       {error,
+        {transport_initialization_failed,
+         otel_transport_otlp_http,
+         {httpc_options_failed, _}}},
+       otel_exporter_otlp_span:init(
+         HttpOptions#{httpc_options => [{not_an_httpc_option, true}]})),
+
+    Channel = {?MODULE, ?FUNCTION_NAME, make_ref()},
+    NamedGrpcOptions = GrpcOptions#{channel => Channel},
+    {ok, NamedGrpcState} = otel_exporter_otlp_span:init(NamedGrpcOptions),
+    try
+        ?assertMatch(
+           {error,
+            {transport_initialization_failed,
+             otel_transport_otlp_grpc,
+             {grpc_channel_start_failed, {already_started, _}}}},
+           otel_exporter_otlp_span:init(NamedGrpcOptions))
+    after
+        ok = otel_exporter_otlp_span:shutdown(NamedGrpcState)
     end.
 
 ets_instrumentation_info(_Config) ->

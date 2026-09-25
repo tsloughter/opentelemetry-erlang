@@ -23,11 +23,10 @@
 
 %% Do any initialization of the exporter here and return configuration
 %% that will be passed along with a list of logs to the `export' function.
--callback init(term()) -> {ok, term()} | ignore.
+-callback init(term()) -> {ok, term()} | {error, term()} | ignore.
 
-%% Do whatever needs to be done to export each log here, the caller will block
-%% until it returns.
--callback export(list(), otel_resource:t(), term()) -> ok |
+%% Export the log handler's batch payload. The caller blocks until it returns.
+-callback export(term(), otel_resource:t(), term()) -> ok |
                                                           success |
                                                           failed_not_retryable |
                                                           failed_retryable.

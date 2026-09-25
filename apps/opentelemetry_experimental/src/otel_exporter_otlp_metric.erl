@@ -56,103 +56,38 @@
          export/3,
          shutdown/1]).
 
--include_lib("kernel/include/logger.hrl").
-
--record(state, {channel :: term(),
-                httpc_profile :: atom() | undefined,
-                protocol :: otel_exporter_otlp:protocol(),
-                channel_pid :: pid() | undefined,
-                headers :: otel_exporter_otlp:headers(),
-                compression :: otel_exporter_otlp:compression() | undefined,
-                grpc_metadata :: map() | undefined,
-                endpoints :: [otel_exporter_otlp:endpoint_map()]}).
+-record(state, {protocol :: grpc | http_protobuf,
+                transport :: map()}).
 
 %% @doc Initialize the exporter based on the provided configuration.
--spec init(otel_exporter_otlp:opts()) -> {ok, #state{}}.
+-spec init(otel_exporter_otlp:opts()) -> {ok, #state{}} | {error, term()}.
 init(Opts) ->
-    case otel_exporter_otlp:init(Opts) of
-        {ok, #{channel := Channel,
-               channel_pid := ChannelPid,
-               endpoints := Endpoints,
-               headers := Headers,
-               compression := Compression,
-               grpc_metadata := Metadata,
-               protocol := grpc}} ->
-            {ok, #state{channel=Channel,
-                        channel_pid=ChannelPid,
-                        endpoints=Endpoints,
-                        headers=Headers,
-                        compression=Compression,
-                        grpc_metadata=Metadata,
-                        protocol=grpc}};
-        {ok, #{httpc_profile := HttpcProfile,
-               endpoints := Endpoints,
-               headers := Headers,
-               compression := Compression,
-               protocol := http_protobuf}} ->
-            {ok, #state{httpc_profile=HttpcProfile,
-                        endpoints=Endpoints,
-                        headers=Headers,
-                        compression=Compression,
-                        protocol=http_protobuf}};
-        {ok, #{httpc_profile := HttpcProfile,
-               endpoints := Endpoints,
-               headers := Headers,
-               compression := Compression,
-               protocol := http_json}} ->
-            {ok, #state{httpc_profile=HttpcProfile,
-                        endpoints=Endpoints,
-                        headers=Headers,
-                        compression=Compression,
-                        protocol=http_json}}
+    case otel_exporter_otlp:init(Opts, opentelemetry_metrics_service) of
+        {ok, Transport=#{protocol := Protocol}} ->
+            {ok, #state{protocol=Protocol, transport=Transport}};
+        {error, _}=Error ->
+            Error
     end.
 
 %% @doc Export OTLP protocol telemery data to the configured endpoints.
-export(_Metrics, _Resource, #state{protocol=http_json}) ->
-    {error, unimplemented};
-export(Metrics, Resource, #state{protocol=http_protobuf,
-                                 httpc_profile=HttpcProfile,
-                                 headers=Headers,
-                                 compression=Compression,
-                                 endpoints=[#{scheme := Scheme,
-                                              host := Host,
-                                              path := Path,
-                                              port := Port,
-                                              ssl_options := SSLOptions} | _]}) ->
-    case uri_string:normalize(#{scheme => Scheme,
-                                host => Host,
-                                port => Port,
-                                path => Path}) of
-        {error, Type, Error} ->
-            ?LOG_INFO("error normalizing OTLP export URI: ~p ~p",
-                      [Type, Error]),
-            error;
-        Address ->
-            case otel_otlp_metrics:to_proto(Metrics, Resource) of
-                empty ->
-                    ok;
-                ProtoMap ->
-                    Body = opentelemetry_exporter_metrics_service_pb:encode_msg(ProtoMap,
-                                                                                export_metrics_service_request),
-                    otel_exporter_otlp:export_http(Address, Headers, Body, Compression, SSLOptions, HttpcProfile)
-            end
+export(Metrics, Resource,
+       #state{protocol=http_protobuf, transport=Transport}) ->
+    case otel_otlp_metrics:to_proto(Metrics, Resource) of
+        empty ->
+            ok;
+        ProtoMap ->
+            Body = opentelemetry_exporter_metrics_service_pb:encode_msg(
+                     ProtoMap, export_metrics_service_request),
+            otel_exporter_otlp:export(Body, Transport)
     end;
-export(Metrics, Resource, #state{protocol=grpc,
-                                 grpc_metadata=Metadata,
-                                 channel=Channel}) ->
+export(Metrics, Resource, #state{protocol=grpc, transport=Transport}) ->
     case otel_otlp_metrics:to_proto(Metrics, Resource) of
         empty ->
             ok;
         Request ->
-            GrpcCtx = ctx:new(),
-            otel_exporter_otlp:export_grpc(GrpcCtx, opentelemetry_metrics_service, Metadata, Request, Channel)
-    end;
-export(_Metrics, _Resource, _State) ->
-    {error, unimplemented}.
+            otel_exporter_otlp:export(Request, Transport)
+    end.
 
 %% @doc Shutdown the exporter.
-shutdown(#state{channel_pid=undefined}) ->
-    ok;
-shutdown(#state{channel_pid=Pid}) ->
-    _ = grpcbox_channel:stop(Pid),
-    ok.
+shutdown(#state{transport=Transport}) ->
+    otel_exporter_otlp:shutdown(Transport).

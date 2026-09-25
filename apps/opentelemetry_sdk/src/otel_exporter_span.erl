@@ -32,7 +32,7 @@
 
 %% Do any initialization of the exporter here and return state that will be
 %% passed along with each span batch to `export/2'.
--callback init(term()) -> {ok, term()} | ignore.
+-callback init(term()) -> {ok, term()} | {error, term()} | ignore.
 
 %% Export a batch of finished spans. Calls for one exporter instance are
 %% serialized by the built-in span processors.

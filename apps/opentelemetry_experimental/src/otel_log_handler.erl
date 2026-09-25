@@ -35,7 +35,8 @@
          callback_mode/0,
          idle/3,
          exporting/3,
-         handle_event/3]).
+         handle_event/3,
+         terminate/3]).
 
 -type config() :: #{id => logger:handler_id(),
                     regname := atom(),
@@ -200,9 +201,9 @@ exporting(EventType, EventContent, Data) ->
 
 handle_event({call, From}, {changing_config, _SetOrUpdate, _OldConfig, NewConfig}, Data) ->
     {keep_state, Data#data{config=NewConfig}, [{reply, From, NewConfig}]};
-handle_event({call, From}, {removing_handler, Config}, _Data) ->
+handle_event({call, From}, {removing_handler, Config}, Data) ->
     %% TODO: flush
-    {keep_state_and_data, [{reply, From, Config}]};
+    {stop_and_reply, normal, [{reply, From, Config}], Data};
 handle_event({call, From}, {filter_handler, Config}, Data) ->
     {keep_state, Data, [{reply, From, Config}]};
 handle_event({call, From}, {filter_config, Config}, Data) ->
@@ -215,6 +216,9 @@ handle_event(cast, {log, Scope, LogEvent}, Data=#data{batch=Logs}) ->
                                                           end, [LogEvent], Logs)}};
 handle_event(_, _, _) ->
     keep_state_and_data.
+
+terminate(_Reason, _State, #data{exporter=Exporter}) ->
+    otel_exporter_log:shutdown(Exporter).
 
 %%
 

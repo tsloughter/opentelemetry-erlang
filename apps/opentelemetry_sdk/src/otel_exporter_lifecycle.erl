@@ -27,7 +27,15 @@ init({ExporterModule, Config}) when is_atom(ExporterModule) ->
         {ok, ExporterState} ->
             ?LOG_INFO("Exporter ~tp successfully initialized", [ExporterModule]),
             {ExporterModule, ExporterState};
+        {error, Reason} ->
+            ?LOG_WARNING("Exporter ~tp failed to initialize: ~tp",
+                         [ExporterModule, Reason]),
+            undefined;
         ignore ->
+            undefined;
+        Other ->
+            ?LOG_WARNING("Exporter ~tp returned an invalid initialization result: ~tp",
+                         [ExporterModule, Other]),
             undefined
     catch
         Kind:Reason:StackTrace ->

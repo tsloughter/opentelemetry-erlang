@@ -18,9 +18,9 @@
 %%%-------------------------------------------------------------------------
 -module(otel_exporter_otlp).
 
--export([init/1,
-         export_http/6,
-         export_grpc/5,
+-export([init/2,
+         export/2,
+         shutdown/1,
          endpoints/2]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -70,152 +70,56 @@
               endpoint/0,
               protocol/0]).
 
--type state() :: #{channel := term() | undefined,
-                   httpc_profile := atom() | undefined,
-                   protocol := protocol(),
-                   channel_pid := pid() | undefined,
-                   headers := headers(),
-                   compression := compression() | undefined,
-                   grpc_metadata := map() | undefined,
-                   endpoints := [endpoint_map()]}.
+-type state() :: #{protocol := protocol(),
+                   transport := {module(), term()}}.
 
 %% @doc Initialize the exporter based on the provided configuration.
--spec init(opts()) -> {ok, state()}.
+-spec init(opts(), module()) -> {ok, state()} | {error, term()}.
 init(#{endpoints := ConfiguredEndpoints,
        headers := ConfiguredHeaders,
        protocol := Protocol,
-       compression := ConfiguredCompression,
-       ssl_options := SSLOptions}=Opts) ->
-    State = #{channel => undefined,
-              httpc_profile => undefined,
-              protocol => http_protobuf,
-              channel_pid => undefined,
-              headers => [],
-              compression => undefined,
-              grpc_metadata => undefined,
-              endpoints => []},
+       ssl_options := SSLOptions}=Opts, GrpcServiceModule) ->
+    case initialize_endpoints(ConfiguredEndpoints, SSLOptions) of
+        {ok, []} ->
+            {error, no_endpoints};
+        {ok, Endpoints} ->
+            TransportOpts = Opts#{endpoints => Endpoints,
+                                  headers => headers(ConfiguredHeaders),
+                                  grpc_service => GrpcServiceModule},
+            init_transport(Protocol, TransportOpts);
+        {error, _}=Error ->
+            Error
+    end;
+init(Opts, _GrpcServiceModule) ->
+    {error, {invalid_options, Opts}}.
 
-    Headers = headers(ConfiguredHeaders),
-    Compression = ConfiguredCompression,
-    case Protocol of
-        grpc ->
-            Endpoints = endpoints(ConfiguredEndpoints, SSLOptions),
-            ChannelOpts = maps:get(channel_opts, Opts, #{}),
-            UpdatedChannelOpts = case Compression of
-                                   undefined -> ChannelOpts;
-                                   Encoding -> maps:put(encoding, Encoding, ChannelOpts)
-                                 end,
+init_transport(grpc, Opts) ->
+    init_transport(grpc, otel_transport_otlp_grpc, Opts);
+init_transport(http_protobuf, Opts) ->
+    init_transport(http_protobuf, otel_transport_otlp_http, Opts);
+init_transport(Protocol, _Opts) ->
+    {error, {unsupported_protocol, Protocol}}.
 
-            %% Channel name can be any term. To separate Channels per
-            %% the process calling the exporter  use the current pid
-            Channel = self(),
-            case grpcbox_channel:start_link(Channel,
-                                            grpcbox_endpoints(Endpoints),
-                                            UpdatedChannelOpts) of
-                {ok, ChannelPid} ->
-                    {ok, State#{channel => Channel,
-                                channel_pid => ChannelPid,
-                                endpoints => Endpoints,
-                                headers => Headers,
-                                compression => Compression,
-                                grpc_metadata => headers_to_grpc_metadata(Headers),
-                                protocol => grpc}};
-                ErrorOrIgnore ->
-                    %% TODO: do something different for `already_started' error?
-
-                    %% even if it is `ignore' we should just use `http_protobuf' because
-                    %% `ignore' should never happen and means something is wrong
-                    ?LOG_WARNING("unable to start grpc channel for exporting and falling back "
-                                 "to http_protobuf protocol. reason=~p", [ErrorOrIgnore]),
-                    {ok, State#{endpoints => Endpoints,
-                                headers => Headers,
-                                compression => Compression,
-                                protocol => http_protobuf}}
-            end;
-        http_protobuf ->
-            HttpcProfile = start_httpc(Opts),
-            Endpoints = endpoints(ConfiguredEndpoints, SSLOptions),
-            {ok, State#{httpc_profile => HttpcProfile,
-                        endpoints => Endpoints,
-                        headers => Headers,
-                        compression => Compression,
-                        protocol => http_protobuf}};
-        http_json ->
-            HttpcProfile = start_httpc(Opts),
-            Endpoints = endpoints(ConfiguredEndpoints, SSLOptions),
-            {ok, State#{httpc_profile => HttpcProfile,
-                        endpoints => Endpoints,
-                        headers => Headers,
-                        compression => Compression,
-                        protocol => http_json}}
-    end.
-
-%% use a unique httpc profile per exporter
-start_httpc(Opts) ->
-    HttpcProfile = list_to_atom(lists:concat([?MODULE, "_", erlang:pid_to_list(self())])),
-
-    case httpc:info(HttpcProfile) of
-        {error, {not_started, _}} ->
-            %% by default use inet6fb4 which will try ipv6 and then fallback to ipv4 if it fails
-            HttpcOptions0 = lists:usort(maps:get(httpc_options, Opts, [])),
-            HttpcOptions = case lists:keymember(ipfamily, 1, HttpcOptions0) of
-                               true -> HttpcOptions0;
-                               false -> lists:sort([{ipfamily, inet6fb4} | HttpcOptions0])
-                           end,
-            %% can't use `stand_alone' because then `httpc:info(Profile)' would fail
-            {ok, Pid} = inets:start(httpc, [{profile, HttpcProfile}]),
-            ok = httpc:set_options(HttpcOptions, Pid);
-        _ ->
-            %% profile already started
-            ok
-    end,
-    HttpcProfile.
-
-%% @doc Export OTLP protocol telemery data to the configured endpoints.
-export_http(Address, Headers, Body, Compression, SSLOptions, HttpcProfile) ->
-    {NewHeaders, NewBody} =
-        case Compression of
-            gzip -> {[{"content-encoding", "gzip"} | Headers], zlib:gzip(Body)};
-            _ -> {Headers, Body}
-        end,
-
-    case httpc:request(post, {Address, NewHeaders, "application/x-protobuf", NewBody},
-                       [{ssl, SSLOptions}], [], HttpcProfile) of
-        {ok, {{_, Code, _}, _, _}} when Code >= 200 andalso Code =< 202 ->
-            ok;
-        {ok, {{_, Code, _}, _, Message}} ->
-            ?LOG_INFO("error response from service exported to status=~p ~s",
-                      [Code, Message]),
-            error;
+init_transport(Protocol, Module, Opts) ->
+    case Module:init(Opts) of
+        {ok, TransportState} ->
+            {ok, #{protocol => Protocol,
+                   transport => {Module, TransportState}}};
         {error, Reason} ->
-            ?LOG_INFO("client error exporting ~p", [Reason]),
-            error
+            {error, {transport_initialization_failed, Module, Reason}};
+        ignore ->
+            {error, {transport_initialization_failed, Module, ignore}};
+        Other ->
+            {error, {invalid_transport_init_result, Module, Other}}
     end.
 
-export_grpc(GrpcCtx, GrpcServiceModule, Metadata, Request, Channel) ->
-    GrpcCtx1 = grpcbox_metadata:append_to_outgoing_ctx(GrpcCtx, Metadata),
-    case GrpcServiceModule:export(GrpcCtx1, Request, #{channel => Channel}) of
-        {ok, _Response, _ResponseMetadata} ->
-            ok;
-        {error, {Status, Message}, _} ->
-            ?LOG_INFO("OTLP grpc export failed with GRPC status ~s : ~s", [Status, Message]),
-            error;
-        {http_error, {Status, _}, _} ->
-            ?LOG_INFO("OTLP grpc export failed with HTTP status code ~s", [Status]),
-            error;
-        {error, Reason} ->
-            ?LOG_INFO("OTLP grpc export failed with error: ~p", [Reason]),
-            error
-    end.
+-spec export(term(), state()) -> ok | error | {error, term()}.
+export(Payload, #{transport := {Module, TransportState}}) ->
+    Module:export(Payload, TransportState).
 
-grpcbox_endpoints(Endpoints) ->
-    [{scheme(Scheme), Host, Port, maps:get(ssl_options, Endpoint, [])} ||
-        #{scheme := Scheme, host := Host, port := Port} = Endpoint <- Endpoints].
-
-headers_to_grpc_metadata(Headers) ->
-    lists:foldl(fun({X, Y}, Acc) ->
-                        maps:put(unicode:characters_to_binary(X), unicode:characters_to_binary(Y), Acc)
-                end, #{}, Headers).
+-spec shutdown(state()) -> ok.
+shutdown(#{transport := {Module, TransportState}}) ->
+    Module:shutdown(TransportState).
 
 %% make all headers into list strings
 headers(List) when is_list(List) ->
@@ -236,16 +140,33 @@ user_agent() ->
 
 -spec endpoints(endpoint() | [endpoint()], ssl_options() | undefined) -> [endpoint_map()].
 endpoints(List, DefaultSSLOpts) when is_list(List) ->
-    Endpoints = case io_lib:printable_list(List) of
-                    true ->
-                        [List];
-                    false ->
-                        List
-                end,
-
-    lists:filtermap(fun(E) -> endpoint(E, DefaultSSLOpts) end, Endpoints);
+    lists:filtermap(fun(E) -> endpoint(E, DefaultSSLOpts) end,
+                    endpoint_values(List));
 endpoints(Endpoint, DefaultSSLOpts) ->
     lists:filtermap(fun(E) -> endpoint(E, DefaultSSLOpts) end, [Endpoint]).
+
+initialize_endpoints(Endpoints, DefaultSSLOpts) ->
+    initialize_endpoints(endpoint_values(Endpoints), DefaultSSLOpts, []).
+
+initialize_endpoints([], _DefaultSSLOpts, Acc) ->
+    {ok, lists:reverse(Acc)};
+initialize_endpoints([Endpoint | Rest], DefaultSSLOpts, Acc) ->
+    case parse_endpoint(Endpoint, DefaultSSLOpts) of
+        {true, Parsed} ->
+            initialize_endpoints(Rest, DefaultSSLOpts, [Parsed | Acc]);
+        false ->
+            {error, {invalid_endpoint, Endpoint}}
+    end.
+
+endpoint_values([]) ->
+    [];
+endpoint_values(List) when is_list(List) ->
+    case io_lib:printable_list(List) of
+        true -> [List];
+        false -> List
+    end;
+endpoint_values(Endpoint) ->
+    [Endpoint].
 
 endpoint(Endpoint, DefaultSSLOpts) ->
     case parse_endpoint(Endpoint, DefaultSSLOpts) of
@@ -314,11 +235,9 @@ to_charlist(Atom) when is_atom(Atom) ->
 to_charlist(Other) ->
     unicode:characters_to_list(Other).
 
-scheme_port(Scheme) when not is_atom(Scheme) ->
-    scheme_port(scheme(Scheme));
-scheme_port(http) ->
+scheme_port(Scheme) when Scheme =:= http; Scheme =:= "http"; Scheme =:= <<"http">> ->
     80;
-scheme_port(https) ->
+scheme_port(Scheme) when Scheme =:= https; Scheme =:= "https"; Scheme =:= <<"https">> ->
     443;
 scheme_port(_) ->
     %% unknown scheme
@@ -342,22 +261,3 @@ update_ssl_opts(Host, {system_defaults, SSLOptions}) ->
     SSLOptions ++ tls_certificate_check:options(Host);
 update_ssl_opts(_, SSLOptions) ->
     SSLOptions.
-
-
-scheme(Scheme) when Scheme =:= "https" orelse Scheme =:= <<"https">> ->
-    https;
-scheme(Scheme) when Scheme =:= "http" orelse Scheme =:= <<"http">> ->
-    http;
-scheme(Scheme) ->
-    ?LOG_WARNING("unknown scheme ~p, converting to existing atom, if possible, and using as is", [Scheme]),
-    to_existing_atom(Scheme).
-
-to_existing_atom(Term) when is_atom(Term) ->
-    Term;
-to_existing_atom(Scheme) when is_list(Scheme) ->
-    list_to_existing_atom(Scheme);
-to_existing_atom(Scheme) when is_binary(Scheme) ->
-    %% TODO: switch to binary_to_existing_atom once we drop OTP-22 support
-    list_to_existing_atom(binary_to_list(Scheme));
-to_existing_atom(_) ->
-    erlang:error(bad_exporter_scheme).

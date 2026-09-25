@@ -35,6 +35,7 @@
          handle_cast/2,
          handle_info/2,
          handle_continue/2,
+         terminate/2,
          code_change/1]).
 
 -include_lib("opentelemetry_api_experimental/include/otel_metrics.hrl").
@@ -150,7 +151,7 @@ handle_call(collect, _From, State) ->
     State1 = collect_(State),
     {reply, ok, State1};
 handle_call(shutdown, _From, State) ->
-    {reply, ok, State};
+    {stop, normal, ok, State};
 handle_call(_, _From, State) ->
     {noreply, State}.
 
@@ -166,6 +167,9 @@ handle_info(_, State) ->
 
 code_change(State) ->
     {ok, State}.
+
+terminate(_Reason, #state{exporter=Exporter}) ->
+    otel_exporter_metric:shutdown(Exporter).
 
 %%
 
