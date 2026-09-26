@@ -169,6 +169,10 @@ maps, `#{batch => Options}` and `#{otlp_http => Options}`, are also accepted to
 ease translation from JSON. Prefer tagged tuples in `sys.config` and
 `runtime.exs`; JSON uses single-entry objects.
 
+For ratio sampling, use `{trace_id_ratio_based, #{ratio => 0.25}}`.
+The numeric shorthand `{trace_id_ratio_based, 0.25}` is also accepted. Omitting
+`ratio` from the options map, or setting it to `null`, uses the default `1.0`.
+
 For built-in propagators without options, use atoms in `composite`, for example
 `[tracecontext, baggage]`. `tracecontext` is the canonical name, matching the
 declarative schema and `OTEL_PROPAGATORS`; `trace_context` remains an accepted

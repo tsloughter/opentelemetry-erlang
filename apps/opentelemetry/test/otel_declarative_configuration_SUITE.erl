@@ -26,6 +26,8 @@ all() ->
      validates_erlang_distribution_values,
      rejects_json_erlang_names,
      resolves_standalone_tracer_provider,
+     resolves_ratio_sampler_forms,
+     rejects_invalid_ratio_sampler_options,
      normalizes_json_sweeper_settings,
      configured_resource_takes_precedence,
      warns_about_unimplemented_settings,
@@ -593,6 +595,49 @@ resolves_standalone_tracer_provider(_Config) ->
     ?assertEqual({error, {invalid_configuration,
                          [tracer_provider, processors], missing}},
                  otel_configuration_sdk:create_tracer_provider(#{})).
+
+resolves_ratio_sampler_forms(_Config) ->
+    Cases = [{0.25, 0.25}, {1, 1.0},
+             {#{ratio => 0.25}, 0.25}, {#{<<"ratio">> => 0.25}, 0.25},
+             {#{}, 1.0}, {#{ratio => null}, 1.0}],
+    lists:foreach(
+      fun({Options, Ratio}) ->
+              Forms = case is_map(Options) of
+                          true -> [{trace_id_ratio_based, Options},
+                                   #{trace_id_ratio_based => Options}];
+                          false -> [{trace_id_ratio_based, Options}]
+                      end,
+              lists:foreach(
+                fun(Form) ->
+                        Native = #{processors => [], sampler => Form},
+                        {ok, Model} = otel_configuration_model:from_application_env(
+                                        [{tracer_provider, Native}]),
+                        {ok, Runtime} = otel_configuration_sdk:create(Model),
+                        {ok, Provider} = otel_configuration_sdk:create_tracer_provider(Native),
+                        ?assertEqual(Provider, otel_configuration_sdk:tracer_provider(Runtime)),
+                        ?assertEqual({trace_id_ratio_based, Ratio}, maps:get(sampler, Provider))
+                end, Forms)
+      end, Cases),
+    ?assertMatch({ok, #{sampler := {parent_based,
+                                   #{root := {trace_id_ratio_based, 0.25}}}}},
+                 otel_configuration_sdk:create_tracer_provider(
+                   #{processors => [],
+                     sampler => {parent_based,
+                                 #{root => {trace_id_ratio_based, #{ratio => 0.25}}}}})).
+
+rejects_invalid_ratio_sampler_options(_Config) ->
+    lists:foreach(
+      fun({Options, Key, Reason}) ->
+              lists:foreach(
+                fun(Form) ->
+                        ?assertEqual(
+                           {error, {invalid_configuration,
+                                    [tracer_provider, sampler, trace_id_ratio_based, Key], Reason}},
+                           otel_configuration_sdk:create_tracer_provider(
+                             #{processors => [], sampler => Form}))
+                end, [{trace_id_ratio_based, Options}, #{trace_id_ratio_based => Options}])
+      end, [{#{ratio => <<"0.25">>}, ratio, <<"0.25">>},
+            {#{ration => 0.25}, ration, unknown_property}]).
 
 normalizes_json_sweeper_settings(_Config) ->
     {ok, Resolved} = otel_configuration_declarative:resolve(

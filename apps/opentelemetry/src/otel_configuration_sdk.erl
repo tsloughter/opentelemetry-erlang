@@ -653,6 +653,8 @@ validate_tracer_limits(TracerProvider) ->
 
 sampler(always_on, _Path) -> always_on;
 sampler(always_off, _Path) -> always_off;
+sampler({trace_id_ratio_based, Options}, Path) when is_map(Options) ->
+    sampler(#{trace_id_ratio_based => Options}, Path);
 sampler({trace_id_ratio_based, Ratio}, Path) ->
     {trace_id_ratio_based, float(number(Ratio, Path ++ [trace_id_ratio_based, ratio]))};
 sampler({parent_based, Options}, Path) when is_map(Options) ->
