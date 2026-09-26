@@ -33,8 +33,7 @@
          parse/1]).
 
 -define(OS_ENV, "OTEL_RESOURCE_ATTRIBUTES").
--define(LABEL_LIST_SPLITTER, ",").
--define(LABEL_KEY_VALUE_SPLITTER, "=").
+-include_lib("kernel/include/logger.hrl").
 
 %% @private
 get_resource(_Config) ->
@@ -50,17 +49,19 @@ get_resource(_Config) ->
 %%
 
 %% @private
--spec parse(false | string()) -> list().
+-spec parse(false | string()) -> [{binary(), binary()}].
 parse(false) ->
     [];
 parse(RawLabels) ->
-    Labels = string:split(RawLabels, ?LABEL_LIST_SPLITTER, all),
-    lists:filtermap(fun(Label) ->
-                            case string:split(Label, ?LABEL_KEY_VALUE_SPLITTER, all) of
-                                [K, V] ->
-                                    V1 = re:replace(string:trim(V), "^\"|\"$", "", [global, {return, list}]),
-                                    {true, {string:trim(K), V1}};
-                                _ ->
-                                    false
-                            end
-                    end, Labels).
+    case unicode:characters_to_binary(RawLabels) of
+        Binary when is_binary(Binary) ->
+            {Pairs, Errors} = otel_configuration_key_value_list:parse(Binary),
+            lists:foreach(fun(_) -> warn() end, Errors),
+            Pairs;
+        _ ->
+            warn(),
+            []
+    end.
+
+warn() ->
+    ?LOG_WARNING("Ignoring invalid entry in OpenTelemetry environment variable ~ts", [?OS_ENV]).

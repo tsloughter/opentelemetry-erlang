@@ -16,6 +16,8 @@ all() ->
      environment_can_disable_sdk,
      environment_can_disable_export_and_propagation,
      invalid_and_empty_values_use_defaults,
+     shared_key_value_syntax,
+     malformed_key_value_entries,
      explicit_application_configuration_is_authoritative,
      invalid_explicit_configuration_does_not_fall_back].
 
@@ -261,6 +263,62 @@ invalid_and_empty_values_use_defaults(_Config) ->
                                                            export_timeout := 30000}}]},
                  otel_configuration_sdk:tracer_provider(Runtime)),
     ?assertMatch(#{endpoints := [<<"http://localhost:4318/v1/traces">>]}, exporter_options(Runtime)).
+
+shared_key_value_syntax(_Config) ->
+    Raw = <<" name%2Ckey = value%3Dpart ,percent=100%25,once=%252C,"
+            "plus=a+b,equals=a=b,empty=,quoted=\"text\","
+            "unicode=caf%C3%A9,literal=caf", 16#C3, 16#A9>>,
+    Expected = [{<<"name,key">>, <<"value=part">>}, {<<"percent">>, <<"100%">>},
+                {<<"once">>, <<"%2C">>}, {<<"plus">>, <<"a+b">>},
+                {<<"equals">>, <<"a=b">>}, {<<"empty">>, <<>>},
+                {<<"quoted">>, <<"\"text\"">>},
+                {<<"unicode">>, <<"caf", 16#C3, 16#A9>>},
+                {<<"literal">>, <<"caf", 16#C3, 16#A9>>}],
+    lists:foreach(
+      fun({Input, Pairs}) ->
+              String = case unicode:characters_to_list(Input) of
+                           Characters when is_list(Characters) -> Characters;
+                           _ -> error(invalid_test_input)
+                       end,
+              os:putenv("OTEL_RESOURCE_ATTRIBUTES", String),
+              os:putenv("OTEL_EXPORTER_OTLP_HEADERS", String),
+              ?assertEqual(Pairs, otel_resource_env_var:parse(String)),
+              {ok, Environment} = otel_configuration_source:resolve([]),
+              {ok, Declarative} = otel_configuration_declarative:resolve(
+                                   #{file_format => <<"1.1">>,
+                                     resource => #{attributes_list => Input}}),
+              Attributes = resource_attributes(otel_resource:create(Pairs)),
+              ?assertEqual(Attributes, resource_attributes(
+                                         otel_configuration_sdk:resource(Environment))),
+              ?assertEqual(Attributes, resource_attributes(
+                                         otel_configuration_sdk:resource(Declarative))),
+              ?assertEqual(Attributes, resource_attributes(otel_resource_env_var:get_resource(#{}))),
+              ?assertEqual(Pairs, maps:get(headers, exporter_options(Environment)))
+      end, [{Raw, Expected}, {<<>>, []}]).
+
+malformed_key_value_entries(_Config) ->
+    Valid = [{<<"before">>, <<"one">>}, {<<"after">>, <<"two">>}],
+    lists:foreach(
+      fun({Bad, Reason}) ->
+              Input = <<"before=one,", Bad/binary, ",after=two">>,
+              String = binary_to_list(Input),
+              os:putenv("OTEL_RESOURCE_ATTRIBUTES", String),
+              os:putenv("OTEL_EXPORTER_OTLP_HEADERS", String),
+              ?assertEqual(Valid, otel_resource_env_var:parse(String)),
+              {ok, Environment} = otel_configuration_source:resolve([]),
+              ?assertEqual(resource_attributes(otel_resource:create(Valid)),
+                           resource_attributes(otel_configuration_sdk:resource(Environment))),
+              ?assertEqual(Valid, maps:get(headers, exporter_options(Environment))),
+              ?assertEqual({error, {invalid_configuration, [resource, attributes_list], Reason}},
+                           otel_configuration_declarative:resolve(
+                             #{file_format => <<"1.1">>,
+                               resource => #{attributes_list => Input}}))
+      end, [{<<"bad=%">>, {invalid_percent_encoding, <<"%">>}},
+            {<<"bad=%GG">>, {invalid_percent_encoding, <<"%GG">>}},
+            {<<"bad=%FF">>, {invalid_utf8, <<"%FF">>}},
+            {<<"bad=%C3">>, {invalid_utf8, <<"%C3">>}},
+            {<<"%GG=value">>, {invalid_percent_encoding, <<"%GG">>}},
+            {<<"=value">>, <<"=value">>}, {<<"missing">>, <<"missing">>}, {<<>>, <<>>}]).
 
 explicit_application_configuration_is_authoritative(_Config) ->
     set_environment([{"OTEL_SDK_DISABLED", "true"}, {"OTEL_SERVICE_NAME", "ignored"},

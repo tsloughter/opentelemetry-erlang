@@ -329,6 +329,14 @@ a nonempty `OTEL_SERVICE_NAME` overrides `service.name` from
 section take precedence over detected attributes. Without any SDK configuration,
 the environment defaults described above read these variables automatically.
 
+`attributes_list`, `headers_list`, and their environment-variable equivalents
+use the same comma-separated `name=value` syntax. Names and values are trimmed
+and percent-decoded once as UTF-8; use `%2C` for a literal comma and `%25` for a
+literal percent sign. Only the first `=` separates the name from its value;
+quotes and `+` are literal characters. Malformed entries fail explicit
+configuration with a path-specific error. Environment input logs a warning and
+skips the malformed entry, retaining valid entries.
+
 The old `otel_resource_app_env` detector has been removed. Remove it from
 `resource_detectors` and put application-defined attributes under
 `resource.attributes`, for example `#{attributes => #{<<"service.name">> => <<"x">>}}`.

@@ -173,7 +173,7 @@ timeout_detector(_Config) ->
 
 os_env_resource(_Config) ->
     Resource = otel_resource_env_var:parse("service.name=cttest,service.version=1.1.1"),
-    Expected = [{"service.name", "cttest"}, {"service.version", "1.1.1"}],
+    Expected = [{<<"service.name">>, <<"cttest">>}, {<<"service.version">>, <<"1.1.1">>}],
     ?assertEqual(Expected, Resource),
     ok.
 

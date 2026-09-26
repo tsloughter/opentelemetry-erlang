@@ -115,18 +115,9 @@ put_resource_attribute(Name, Key, Attributes) ->
     end.
 
 pairs(Value, Name) ->
-    lists:filtermap(
-      fun(Entry) ->
-              try
-                  [Key0, Value0] = string:split(Entry, "=", leading),
-                  Key = string:trim(Key0),
-                  true = Key =/= "",
-                  {true, {to_binary(Key),
-                          to_binary(uri_string:percent_decode(to_binary(string:trim(Value0))))}}
-              catch
-                  error:_ -> warn(Name), false
-              end
-      end, string:split(Value, ",", all)).
+    {Pairs, Errors} = otel_configuration_key_value_list:parse(to_binary(Value)),
+    lists:foreach(fun(_) -> warn(Name) end, Errors),
+    Pairs.
 
 propagators() ->
     read("OTEL_PROPAGATORS",

@@ -979,57 +979,11 @@ boolean_value(Value, Path) -> fail({invalid_configuration, Path, Value}).
 
 parse_key_value_list(null, _Path) -> [];
 parse_key_value_list(undefined, _Path) -> [];
-parse_key_value_list(<<>>, _Path) -> [];
 parse_key_value_list(Value, Path) ->
-    [parse_key_value_pair(Part, Path)
-     || Part <- binary:split(to_binary(Value), <<",">>, [global])].
-
-parse_key_value_pair(Part, Path) ->
-    case binary:split(Part, <<"=">>) of
-        [RawName, RawValue] ->
-            Name = trim_binary(RawName),
-            PairValue = trim_binary(RawValue),
-            case Name of
-                <<>> -> fail({invalid_configuration, Path, Part});
-                _ -> {percent_decode(Name, Path), percent_decode(PairValue, Path)}
-            end;
-        _ ->
-            fail({invalid_configuration, Path, Part})
+    case otel_configuration_key_value_list:parse(to_binary(Value)) of
+        {Pairs, []} -> Pairs;
+        {_, [Reason | _]} -> fail({invalid_configuration, Path, Reason})
     end.
-
-percent_decode(Value, Path) ->
-    case percent_decode_binary(Value, <<>>) of
-        {ok, Decoded} -> Decoded;
-        {error, Reason} -> fail({invalid_configuration, Path, {Reason, Value}})
-    end.
-
-percent_decode_binary(<<$%, High, Low, Rest/binary>>, Acc) ->
-    case {hex_value(High), hex_value(Low)} of
-        {{ok, HighValue}, {ok, LowValue}} ->
-            Octet = HighValue * 16 + LowValue,
-            percent_decode_binary(Rest, <<Acc/binary, Octet>>);
-        _ ->
-            {error, invalid_percent_encoding}
-    end;
-percent_decode_binary(<<$%, _/binary>>, _Acc) ->
-    {error, invalid_percent_encoding};
-percent_decode_binary(<<Octet, Rest/binary>>, Acc) ->
-    percent_decode_binary(Rest, <<Acc/binary, Octet>>);
-percent_decode_binary(<<>>, Acc) ->
-    case unicode:characters_to_list(Acc) of
-        {error, _, _} -> {error, invalid_utf8};
-        {incomplete, _, _} -> {error, invalid_utf8};
-        _ -> {ok, Acc}
-    end.
-
-hex_value(Character) when Character >= $0, Character =< $9 ->
-    {ok, Character - $0};
-hex_value(Character) when Character >= $a, Character =< $f ->
-    {ok, Character - $a + 10};
-hex_value(Character) when Character >= $A, Character =< $F ->
-    {ok, Character - $A + 10};
-hex_value(_) ->
-    error.
 
 merge_name_value_pairs(LowPriority, HighPriority) ->
     HighNames = [to_binary(Name) || {Name, _} <- HighPriority],
