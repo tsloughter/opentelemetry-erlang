@@ -141,7 +141,8 @@ create(Model) ->
         validate_attribute_limits(Raw),
         warn_unsupported(logger_provider, Raw, [logger_provider], fun component_map/2),
         warn_unsupported(meter_provider, Raw, [meter_provider], fun component_map/2),
-        Distribution = #{erlang := Erlang} = resolve_distribution(Raw),
+        Distribution = #{erlang := Erlang} = resolve_distribution(
+                                               Raw, otel_configuration_model:source(Model)),
         Configuration =
             #{source => Model,
               file_format => otel_configuration_model:file_format(Model),
@@ -337,7 +338,7 @@ validate_distribution(Configuration) ->
             fail({invalid_configuration, [distribution], Value})
     end.
 
-resolve_distribution(Configuration) ->
+resolve_distribution(Configuration, Source) ->
     case find(distribution, Configuration) of
         error -> #{erlang => #{}};
         {ok, null} -> #{erlang => #{}};
@@ -346,28 +347,50 @@ resolve_distribution(Configuration) ->
                 error -> #{erlang => #{}};
                 {ok, null} -> #{erlang => #{}};
                 {ok, Erlang} when is_map(Erlang) ->
-                    #{erlang => resolve_erlang_distribution(Erlang)}
+                    #{erlang => resolve_erlang_distribution(Erlang, Source)}
             end
     end.
 
-resolve_erlang_distribution(Erlang) ->
-    Resolved = lists:foldl(
-      fun(Key, Acc) ->
-              case find(Key, Erlang) of
-                  {ok, Value} when Value =/= null, Value =/= undefined ->
-                      Acc#{Key => Value};
-                  _ -> Acc
-              end
-      end, #{}, [create_application_tracers,
-                 deny_list,
-                 resource_detectors,
-                 resource_detector_timeout]),
+resolve_erlang_distribution(Erlang, Source) ->
+    Path = [distribution, erlang],
+    Resolved0 = copy_validated(create_application_tracers, Erlang, #{}, Path,
+                               fun boolean_value/2),
+    Resolved1 = copy_validated(resource_detector_timeout, Erlang, Resolved0, Path,
+                               fun non_negative_integer/2),
+    Resolved2 = copy_validated(deny_list, Erlang, Resolved1, Path,
+                               fun(Value, P) -> native_distribution_entries(
+                                                   Value, P, Source, fun deny_list_entry/2) end),
+    Resolved = copy_validated(resource_detectors, Erlang, Resolved2, Path,
+                              fun(Value, P) -> native_distribution_entries(
+                                                  Value, P, Source, fun resource_detector/2) end),
     case find(sweeper, Erlang) of
         {ok, Sweeper} when is_map(Sweeper) ->
             Resolved#{sweeper => resolve_sweeper(Sweeper)};
         _ ->
             Resolved
     end.
+
+%% JSON cannot select Erlang modules or application atoms. Empty lists are safe
+%% and useful for explicitly disabling these distribution extensions.
+native_distribution_entries([], _Path, _Source, _Validator) -> [];
+native_distribution_entries(Values, Path, declarative, _Validator) when is_list(Values) ->
+    fail({unsupported_configuration, Path, Values});
+native_distribution_entries(Values, Path, _Source, Validator) when is_list(Values) ->
+    [Validator(Value, Path) || Value <- Values];
+native_distribution_entries(Value, Path, _Source, _Validator) ->
+    fail({invalid_configuration, Path, Value}).
+
+resource_detector(Module, _Path) when is_atom(Module) -> Module;
+resource_detector({Module, _}=Detector, _Path) when is_atom(Module) -> Detector;
+resource_detector(Value, Path) -> fail({invalid_configuration, Path, Value}).
+
+deny_list_entry(Name, _Path) when is_atom(Name) -> Name;
+deny_list_entry({Name, Version}=Entry, Path) when is_atom(Name), is_list(Version) ->
+    case io_lib:char_list(Version) of
+        true -> Entry;
+        false -> fail({invalid_configuration, Path, Entry})
+    end;
+deny_list_entry(Value, Path) -> fail({invalid_configuration, Path, Value}).
 
 resolve_sweeper(Sweeper) ->
     Path = [distribution, erlang, sweeper],

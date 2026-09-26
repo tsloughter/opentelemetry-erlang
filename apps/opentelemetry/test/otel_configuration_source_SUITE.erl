@@ -14,6 +14,7 @@ all() ->
      application_environment_matches_json,
      rejects_legacy_application_environment,
      application_startup_uses_shared_declarative_configuration,
+     validates_json_distribution_before_startup,
      upstream_reference_starts_sdk,
      omitted_resource_ignores_legacy_detection].
 
@@ -185,6 +186,35 @@ application_startup_uses_shared_declarative_configuration(Config) ->
     ?assertNot(maps:is_key('app.only', Attributes)),
 
     ok = application:stop(opentelemetry).
+
+validates_json_distribution_before_startup(Config) ->
+    File = filename:join(?config(priv_dir, Config), "distribution.json"),
+    os:putenv("OTEL_CONFIG_FILE", File),
+    lists:foreach(
+      fun({Fields, Reason}) ->
+              ok = file:write_file(File,
+                     ["{\"file_format\":\"1.1\",\"tracer_provider\":{\"processors\":[]},",
+                      "\"distribution\":{\"erlang\":{", Fields, "}}}"]),
+              ?assertEqual({error, Reason}, otel_configuration_source:resolve([])),
+              ?assertEqual({error, {configuration_error, Reason}},
+                           opentelemetry_app:start(normal, [])),
+              ?assertEqual(undefined, whereis(opentelemetry_sup)),
+              ?assertEqual(undefined, whereis(otel_resource_detector))
+      end,
+      [{"\"create_application_tracers\":\"false\"",
+        {invalid_configuration, [distribution, erlang, create_application_tracers], <<"false">>}},
+       {"\"resource_detectors\":[\"otel_resource_env_var\"]",
+        {unsupported_configuration, [distribution, erlang, resource_detectors],
+         [<<"otel_resource_env_var">>]}},
+       {"\"resource_detector_timeout\":\"5000\"",
+        {invalid_configuration, [distribution, erlang, resource_detector_timeout], <<"5000">>}}]),
+    %% Real JSON booleans and numbers are safe to pass to the startup consumers.
+    ok = file:write_file(File,
+           <<"{\"file_format\":\"1.1\",\"tracer_provider\":{\"processors\":[]},"
+             "\"distribution\":{\"erlang\":{\"create_application_tracers\":false,"
+             "\"resource_detector_timeout\":0,\"resource_detectors\":[],\"deny_list\":[]}}}">>),
+    {ok, _} = application:ensure_all_started(opentelemetry),
+    ?assert(is_pid(whereis(otel_tracer_provider_global))).
 
 upstream_reference_starts_sdk(Config) ->
     File = filename:join(?config(data_dir, Config), "otel-sdk-config.json"),

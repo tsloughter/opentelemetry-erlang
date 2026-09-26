@@ -287,6 +287,18 @@ Settings specific to this SDK live under `distribution.erlang`:
                storage_size => infinity}}}}
 ```
 
+`create_application_tracers` must be a boolean, and `resource_detector_timeout`
+must be a nonnegative integer in milliseconds. JSON uses `false`, not `"false"`,
+and numeric timeouts, not quoted numbers. These values are checked before SDK
+processes start.
+
+Nonempty `resource_detectors` and `deny_list` settings are native-only: detector
+entries must be module atoms or `{Module, Options}` tuples, and deny-list entries
+must be application atoms or `{Application, VersionString}` tuples. JSON files
+may omit these lists, set them to `null`, or supply empty lists; nonempty lists
+return `unsupported_configuration`. JSON names are not converted into Erlang
+module or application atoms.
+
 With explicit SDK configuration, resource environment variables are only read
 when the corresponding resource detector is explicitly configured.
 `otel_resource_env_var` reads `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME`;
