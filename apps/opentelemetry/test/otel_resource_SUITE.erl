@@ -205,17 +205,33 @@ set_env_var(Name, false) -> os:unsetenv(Name);
 set_env_var(Name, Value) -> os:putenv(Name, Value).
 
 app_env_resource(_Config) ->
-    Attributes = #{a => [{b,[{c,d}]}], service => #{name => <<"hello">>}},
-    Expected = [{<<"a.b.c">>, d}, {<<"service.name">>, <<"hello">>}],
-
-    %% sort because this is created from a map and need to make sure
-    %% the order is always the same when we do the assertion
-    ?assertEqual(Expected, lists:sort(otel_resource_app_env:parse(Attributes))),
-    ok.
+    SchemaUrl = <<"https://opentelemetry.io/schemas/1.8.0">>,
+    try
+        application:set_env(opentelemetry, tracer_provider, #{processors => []}),
+        application:set_env(opentelemetry, distribution, #{erlang => #{resource_detectors => []}}),
+        application:set_env(opentelemetry, resource,
+                            #{attributes => #{<<"service.name">> => <<"x">>},
+                              attributes_list => <<"service.name=from-list,region=ca">>,
+                              schema_url => SchemaUrl}),
+        {ok, _} = application:ensure_all_started(opentelemetry),
+        Resource = case otel_tracer_provider:resource() of
+                       undefined -> error(missing_resource);
+                       R -> R
+                   end,
+        ?assertMatch(#{'service.name' := <<"x">>, region := <<"ca">>},
+                     otel_attributes:map(otel_resource:attributes(Resource))),
+        ?assertEqual(SchemaUrl, otel_resource:schema_url(Resource)),
+        ?assertNot(otel_resource:is_key(<<"attributes.service.name">>, Resource)),
+        ?assertNot(otel_resource:is_key(<<"attributes_list">>, Resource)),
+        ?assertNot(otel_resource:is_key(<<"schema_url">>, Resource))
+    after
+        application:stop(opentelemetry),
+        application:unload(opentelemetry)
+    end.
 
 combining(_Config) ->
-    Resource1 = otel_resource:create(otel_resource_app_env:parse([{service, [{name, <<"other-name">>},
-                                                                             {version, "1.1.1"}]}]),
+    Resource1 = otel_resource:create(#{<<"service.name">> => <<"other-name">>,
+                                       <<"service.version">> => "1.1.1"},
                                      <<"https://opentelemetry.io/schemas/1.8.0">>),
     Resource2 = otel_resource:create(otel_resource_env_var:parse("service.name=cttest,service.version=1.1.1"),
                                      <<"https://opentelemetry.io/schemas/1.8.0">>),
@@ -229,8 +245,9 @@ combining(_Config) ->
     ok.
 
 combining_conflicting_schemas(_Config) ->
-    Resource1 = otel_resource:create(otel_resource_app_env:parse([{service, [{name, <<"other-name">>},
-                                                                             {version, "1.1.1"}]}]), <<"https://opentelemetry.io/schemas/1.8.0">>),
+    Resource1 = otel_resource:create(#{<<"service.name">> => <<"other-name">>,
+                                       <<"service.version">> => "1.1.1"},
+                                     <<"https://opentelemetry.io/schemas/1.8.0">>),
     Resource2 = otel_resource:create(otel_resource_env_var:parse("service.name=cttest,service.version=1.1.1"),
                                      <<"https://opentelemetry.io/schemas/1.7.0">>),
 
@@ -364,11 +381,11 @@ release_service_name_no_version(_Config) ->
 
 validate_keys(_Config) ->
     Attributes = #{<<"e">> => <<"f">>,
-                   service => #{<<"name">> => <<"name">>, alias => <<"alias">>},
+                   <<"service.name">> => <<"name">>, 'service.alias' => <<"alias">>,
                    g => <<"h">>,
-                   '' => <<"i">>,
+                   <<>> => <<"i">>,
                    'ə' => <<"j">>},
-    Resource = otel_resource:create(otel_resource_app_env:parse(Attributes)),
+    Resource = otel_resource:create(Attributes),
     ?assert(otel_resource:is_key(e, Resource)),
     ?assert(otel_resource:is_key('service.name', Resource)),
     ?assert(otel_resource:is_key(<<"service.alias">>, Resource)),

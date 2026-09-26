@@ -307,6 +307,12 @@ a nonempty `OTEL_SERVICE_NAME` overrides `service.name` from
 section take precedence over detected attributes. Without any SDK configuration,
 the environment defaults described above read these variables automatically.
 
+The old `otel_resource_app_env` detector has been removed. Remove it from
+`resource_detectors` and put application-defined attributes under
+`resource.attributes`, for example `#{attributes => #{<<"service.name">> => <<"x">>}}`.
+The SDK reads this configuration directly, including `attributes_list` and
+`schema_url`; no application-environment detector is needed.
+
 The span sweeper periodically handles spans for which `end_span` was never
 called. Its strategies are `drop`, `end_span`, and
 `failed_attribute_and_end_span`; a function may also be supplied through the

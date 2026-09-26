@@ -22,8 +22,9 @@
 %%
 %% The `opentelemetry' library supports <i>resource detectors</i> to
 %% detect attributes to include in the Resource. See {@link otel_resource_detector}
-%% for the behaviour to detect resources, and the {@link otel_resource_app_env}
-%% and {@link otel_resource_env_var} modules for built-in implementations.
+%% for the behaviour to detect resources, and {@link otel_resource_env_var}
+%% for the built-in environment variable detector. Configured resource attributes
+%% are read directly from the SDK's `resource' configuration; no detector is needed.
 %%
 %% See the <a href="https://opentelemetry.io/docs/concepts/resources/">
 %% OpenTelemetry Resource documentation</a> for more information on Resources.
