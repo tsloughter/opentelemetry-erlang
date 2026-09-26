@@ -48,8 +48,9 @@ batch() ->
       max_queue_size => read("OTEL_BSP_MAX_QUEUE_SIZE", fun positive_integer/1, 2048)}.
 
 exporter() ->
-    case read("OTEL_TRACES_EXPORTER", fun(V) -> choice(V, [{"otlp", otlp}, {"none", none}]) end, otlp) of
+    case trace_exporter_name() of
         none -> none;
+        console -> {console, #{}};
         otlp ->
             Transport = read_first(otlp_names("PROTOCOL"), fun protocol/1, otlp_http),
             DefaultEndpoint = case Transport of
@@ -67,6 +68,19 @@ exporter() ->
                compression => read_first(otlp_names("COMPRESSION"),
                                           fun(V) -> choice(V, [{"gzip", gzip}, {"none", none}]) end,
                                           none)}}
+    end.
+
+trace_exporter_name() ->
+    case os:getenv("OTEL_TRACES_EXPORTER") of
+        Unset when Unset =:= false; Unset =:= "" -> otlp;
+        "otlp" -> otlp;
+        "console" -> console;
+        "none" -> none;
+        _ ->
+            ?LOG_WARNING("Invalid or unsupported OTEL_TRACES_EXPORTER; "
+                         "no trace exporter will be configured.", [],
+                         #{otel_configuration_env_var => "OTEL_TRACES_EXPORTER"}),
+            none
     end.
 
 otlp_names(Suffix) ->

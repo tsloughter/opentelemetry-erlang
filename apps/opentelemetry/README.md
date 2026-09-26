@@ -32,14 +32,20 @@ export OTEL_TRACES_SAMPLER_ARG=0.1
 ```
 
 This mode also supports `OTEL_SDK_DISABLED`, `OTEL_PROPAGATORS`,
-`OTEL_TRACES_EXPORTER=none`, OTLP protocol/headers/compression settings, batch
+`OTEL_TRACES_EXPORTER`, OTLP protocol/headers/compression settings, batch
 processor timing and queue settings, and attribute/span limits. Trace-specific
 OTLP variables take precedence over general OTLP variables. The general HTTP
 endpoint receives a `/v1/traces` suffix; a trace-specific endpoint is used as-is.
 Empty environment values are treated as unset. Invalid or unsupported values
-produce warnings and are ignored. The older `OTEL_BSP_SCHEDULE_DELAY_MILLIS`
+produce warnings and are ignored, except for exporter selection as described
+below. The older `OTEL_BSP_SCHEDULE_DELAY_MILLIS`
 and `OTEL_BSP_EXPORT_TIMEOUT_MILLIS` names remain accepted, with the standard
 names taking precedence.
+
+`OTEL_TRACES_EXPORTER` accepts one of `otlp`, `console`, or `none`. `console`
+prints spans through `otel_exporter_stdout`; `none` disables automatic trace
+export. An unset or empty value defaults to `otlp`. An unrecognized or unsupported
+value, including a comma-separated list, logs a warning and selects `none`.
 
 Loading a JSON configuration file requires **Erlang/OTP 27 or later**, because
 the SDK uses the built-in [`json:decode/1`](https://www.erlang.org/doc/apps/stdlib/json.html#decode/1)

@@ -10,6 +10,8 @@ all() ->
     [zero_config_starts_sdk,
      environment_configures_sdk,
      environment_exports_spans,
+     trace_exporter_selection,
+     environment_exports_to_console,
      otlp_signal_precedence,
      environment_can_disable_sdk,
      environment_can_disable_export_and_propagation,
@@ -138,6 +140,72 @@ environment_exports_spans(_Config) ->
     after
         application:stop(opentelemetry),
         meck:unload(httpc)
+    end.
+
+trace_exporter_selection(_Config) ->
+    Handler = trace_exporter_warning_test,
+    ok = logger:add_handler(Handler, ?MODULE,
+                            #{level => warning, config => #{pid => self()}}),
+    try
+        lists:foreach(
+          fun({Value, Expected, Warnings}) ->
+                  case Value of
+                      false -> os:unsetenv("OTEL_TRACES_EXPORTER");
+                      _ -> os:putenv("OTEL_TRACES_EXPORTER", Value)
+                  end,
+                  {ok, Runtime} = otel_configuration_source:resolve([]),
+                  #{processors := [{otel_batch_processor, #{exporter := Exporter}}]} =
+                      otel_configuration_sdk:tracer_provider(Runtime),
+                  case Expected of
+                      otlp -> ?assertMatch({opentelemetry_exporter, #{protocol := http_protobuf}}, Exporter);
+                      _ -> ?assertEqual(Expected, Exporter)
+                  end,
+                  ?assertEqual(Warnings, exporter_warnings())
+          end, [{false, otlp, []}, {"", otlp, []}, {"otlp", otlp, []},
+                {"console", {otel_exporter_stdout, #{}}, []}, {"none", none, []},
+                {"consol", none, ["OTEL_TRACES_EXPORTER"]},
+                {"zipkin", none, ["OTEL_TRACES_EXPORTER"]},
+                {"console,otlp", none, ["OTEL_TRACES_EXPORTER"]}])
+    after
+        logger:remove_handler(Handler)
+    end.
+
+log(#{meta := #{pid := Pid, otel_configuration_env_var := Name}},
+    #{config := #{pid := Pid}}) ->
+    Pid ! {exporter_warning, Name},
+    ok;
+log(_Event, _Config) -> ok.
+
+exporter_warnings() ->
+    receive
+        {exporter_warning, Name} -> [Name | exporter_warnings()]
+    after 0 -> []
+    end.
+
+environment_exports_to_console(_Config) ->
+    set_environment([{"OTEL_TRACES_EXPORTER", "console"},
+                     {"OTEL_BSP_SCHEDULE_DELAY", "60000"}]),
+    Parent = self(),
+    ok = meck:new(otel_exporter_stdout, [passthrough]),
+    ok = meck:expect(otel_exporter_stdout, export,
+                     fun(Table, Resource, State) ->
+                             Result = meck:passthrough([Table, Resource, State]),
+                             Parent ! {console_export, ets:info(Table, size)},
+                             Result
+                     end),
+    try
+        {ok, _} = application:ensure_all_started(opentelemetry),
+        Span = otel_tracer:start_span(opentelemetry:get_tracer(), <<"console-span">>, #{}),
+        otel_span:end_span(Span),
+        otel_tracer_provider:force_flush(),
+        receive
+            {console_export, Count} -> ?assertEqual(1, Count)
+        after 5000 -> error(no_console_export)
+        end,
+        ?assert(meck:validate(otel_exporter_stdout))
+    after
+        application:stop(opentelemetry),
+        meck:unload(otel_exporter_stdout)
     end.
 
 otlp_signal_precedence(_Config) ->
