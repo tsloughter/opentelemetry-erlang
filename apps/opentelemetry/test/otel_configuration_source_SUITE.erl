@@ -13,6 +13,7 @@ all() ->
      empty_file_environment_uses_application_configuration,
      application_environment_matches_json,
      rejects_legacy_application_environment,
+     rejects_native_typos_before_startup,
      application_startup_uses_shared_declarative_configuration,
      validates_json_distribution_before_startup,
      upstream_reference_starts_sdk,
@@ -152,6 +153,25 @@ rejects_legacy_application_environment(_Config) ->
          {invalid_configuration, [processors], legacy_configuration_not_supported}}},
        otel_configuration_source:load(
          [{processors, [{otel_batch_processor, #{}}]}])).
+
+rejects_native_typos_before_startup(_Config) ->
+    lists:foreach(
+      fun({AppEnv, Reason}) ->
+              clear_application_env(opentelemetry),
+              [application:set_env(opentelemetry, Key, Value) || {Key, Value} <- AppEnv],
+              ?assertEqual({error, Reason}, otel_configuration_source:resolve(AppEnv)),
+              ?assertEqual({error, {configuration_error, Reason}},
+                           opentelemetry_app:start(normal, [])),
+              ?assertEqual(undefined, whereis(opentelemetry_sup)),
+              ?assertEqual(undefined, whereis(otel_tracer_provider_global))
+      end,
+      [{[{tracer_providers, #{}}],
+        {invalid_configuration, [tracer_providers], unknown_property}},
+       {[{resource, #{<<"service.name">> => <<"x">>}}],
+        {invalid_configuration, [resource], legacy_configuration_not_supported}},
+       {[{tracer_provider, #{processors => [{batch, #{exporter =>
+                      {otlp_http, #{endpoints => [<<"https://collector/v1/traces">>]}}}}]}}],
+        {invalid_configuration, [exporter, otlp_http, endpoints], unknown_property}}]).
 
 application_startup_uses_shared_declarative_configuration(Config) ->
     PrivDir = ?config(priv_dir, Config),

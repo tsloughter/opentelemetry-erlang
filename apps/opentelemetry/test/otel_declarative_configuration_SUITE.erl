@@ -387,9 +387,15 @@ resolves_console_exporter(_Config) ->
 rejects_invalid_console_exporter_settings(_Config) ->
     lists:foreach(
       fun(Options) ->
+              Reason = case Options of
+                           Map when is_map(Map) ->
+                               [{Key, _}] = maps:to_list(Map),
+                               {invalid_configuration, [exporter, console, Key], unknown_property};
+                           _ -> {invalid_configuration, [exporter, console], Options}
+                       end,
               lists:foreach(
                 fun(Component) ->
-                        ?assertEqual({error, {invalid_configuration, [exporter, console], Options}},
+                        ?assertEqual({error, Reason},
                                      otel_configuration_sdk:create_tracer_provider(
                                        #{processors => [{simple, #{exporter => Component}}]}))
                 end, [{console, Options}, #{console => Options}, #{<<"console">> => Options}])
@@ -443,8 +449,8 @@ rejects_unknown_builtin_processor_settings(_Config) ->
                    #{processors => [{simple, #{exporter => none, schedule_delay => 10}}]})),
     Unknown = <<"unknown_processor_option_", (integer_to_binary(erlang:unique_integer([positive])))/binary>>,
     ?assertException(error, badarg, binary_to_existing_atom(Unknown, utf8)),
-    ?assertEqual({error, {invalid_configuration,
-                         [tracer_provider, processors, batch, Unknown], unknown_property}},
+    %% JSON unknown properties warn, while native unknown properties above fail.
+    ?assertMatch({ok, _},
                  otel_configuration_declarative:resolve(
                    #{<<"file_format">> => <<"1.1">>,
                      <<"tracer_provider">> =>

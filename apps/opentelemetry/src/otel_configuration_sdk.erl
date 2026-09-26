@@ -136,6 +136,7 @@
 create(Model) ->
     Raw = otel_configuration_model:root(Model),
     try
+        otel_configuration_keys:validate(Raw, otel_configuration_model:source(Model)),
         warn_unsupported(log_level, Raw, [log_level], fun log_level/2),
         validate_distribution(Raw),
         validate_attribute_limits(Raw),
@@ -163,6 +164,7 @@ create(Model) ->
           {ok, tracer_provider_configuration()} | {error, error_reason()}.
 create_tracer_provider(Configuration) ->
     try
+        otel_configuration_keys:validate_tracer_provider(Configuration),
         {ok, resolve_tracer_provider_configuration(Configuration, #{})}
     catch
         throw:{declarative_configuration_error, Reason} ->
@@ -589,7 +591,6 @@ resolve_span_processor(Value) ->
 
 resolve_processor_config(Kind, Config) ->
     Path = [tracer_provider, processors, Kind],
-    validate_processor_keys(Kind, Config, Path),
     case Kind of
         batch ->
             warn_unsupported(max_export_batch_size, Config,
@@ -611,23 +612,6 @@ resolve_processor_config(Kind, Config) ->
         simple ->
             Resolved1
     end.
-
-validate_processor_keys(Kind, Config, Path) ->
-    Allowed = case Kind of
-                  batch -> [exporter, schedule_delay, export_timeout, max_queue_size,
-                            max_export_batch_size, check_table_size];
-                  simple -> [exporter, export_timeout]
-              end,
-    AllowedKeys = Allowed ++ [atom_to_binary(Key, utf8) || Key <- Allowed],
-    maps:foreach(
-      fun(Key, _Value) when is_atom(Key); is_binary(Key) ->
-              case lists:member(Key, AllowedKeys) of
-                  true -> ok;
-                  false -> fail({invalid_configuration, Path ++ [Key], unknown_property})
-              end;
-         (Key, _Value) ->
-              fail({invalid_configuration, Path, {invalid_property_name, Key}})
-      end, Config).
 
 copy_validated(Key, Source, Target, Path, Validator) ->
     case find(Key, Source) of
@@ -672,7 +656,7 @@ sampler(always_off, _Path) -> always_off;
 sampler({trace_id_ratio_based, Ratio}, Path) ->
     {trace_id_ratio_based, float(number(Ratio, Path ++ [trace_id_ratio_based, ratio]))};
 sampler({parent_based, Options}, Path) when is_map(Options) ->
-    {parent_based, maps:map(fun(_Key, Child) -> sampler(Child, Path) end, Options)};
+    sampler(#{parent_based => Options}, Path);
 sampler({Module, Config}, _Path) when is_atom(Module), is_map(Config) ->
     {Module, Config};
 sampler(Sampler, Path) when is_map(Sampler), map_size(Sampler) =:= 1 ->
@@ -825,12 +809,8 @@ validate_span_exporter(Value) ->
     fail({invalid_configuration, [tracer_provider, processors, exporter], Value}).
 
 console_exporter(Config0) ->
-    Path = [exporter, console],
-    Config = component_map(Config0, Path),
-    case map_size(Config) of
-        0 -> {otel_exporter_stdout, Config};
-        _ -> fail({invalid_configuration, Path, Config})
-    end.
+    _ = component_map(Config0, [exporter, console]),
+    {otel_exporter_stdout, #{}}.
 
 otlp_exporter(Transport, Config0) ->
     Path = [exporter, otlp_transport(Transport)],

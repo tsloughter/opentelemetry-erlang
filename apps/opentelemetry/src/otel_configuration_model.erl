@@ -36,6 +36,7 @@
                       | {unsupported_file_format, term()}.
 
 -export_type([t/0,
+              source/0,
               error_reason/0]).
 
 -spec from_map(map()) -> {ok, t()} | {error, error_reason()}.

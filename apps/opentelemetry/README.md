@@ -147,6 +147,8 @@ configuration.
 The previous flat application keys such as `processors`, `sampler`,
 `text_map_propagators`, and `traces_exporter` are rejected at startup. Put their
 declarative equivalents under `tracer_provider` or `propagator`.
+Flat resource attribute maps are also rejected; put their entries under
+`resource.attributes`.
 
 The SDK retains the complete source tree and creates a typed runtime
 configuration from it. Resource attributes become maps, ordered name/value
@@ -172,12 +174,22 @@ For built-in propagators without options, use atoms in `composite`, for example
 declarative schema and `OTEL_PROPAGATORS`; `trace_context` remains an accepted
 native alias.
 
-Built-in processors reject unknown option names with a path-specific error.
+Native configuration rejects unknown properties in every built-in configuration
+map with a path-specific error. This applies to `sys.config`, `runtime.exs`,
+and programmatic tracer-provider startup. For example, `otlp_http` accepts
+`endpoint`, not the implementation-module option `endpoints`; resource attributes
+belong under `resource.attributes`, not directly under `resource`.
+
+For preprocessed JSON, unknown properties produce warnings and are ignored by
+the runtime, while the source model retains them. This also applies to processor
+options. Invalid values and unknown component names still fail configuration.
+Custom components retain control over their own properties, and resource
+attribute names are unrestricted by this property-name validation.
+
 When migrating older native configurations, rename `scheduled_delay_ms` to
 `schedule_delay`, `exporting_timeout_ms` to `export_timeout`, and
 `check_table_size_ms` to `check_table_size`. Durations remain in milliseconds.
-Batch-only options are not accepted by `simple`. Custom processors retain
-control over their own option names.
+Batch-only options are not accepted by `simple` in native configuration.
 
 The built-in span exporter names are `otlp_http`, `otlp_grpc`, and `console`.
 `console` uses `otel_exporter_stdout` to print spans for debugging and has no
